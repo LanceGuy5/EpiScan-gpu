@@ -1,0 +1,220 @@
+//We need to determine which of the code we are actually trying to run on GPU
+/*
+*   WITHIN THE CLUSTER-----------------------------------------------
+      ztest <- (getcor(A = as.matrix(case[, ithChunk(as.numeric(i), nSNP, chunk), drop = FALSE]),
+                       B = as.matrix(case[, ithChunk(as.numeric(j), nSNP, chunk), drop = FALSE]),
+                       method = "pearson")
+                -
+                  getcor(A = as.matrix(control[, ithChunk(as.numeric(i), nSNP, chunk), drop = FALSE]),
+                         B = as.matrix(control[, ithChunk(as.numeric(j), nSNP, chunk), drop = FALSE]),
+                         method = "pearson") )  /  sd_tot
+      index <- which(abs(ztest) >= zthres, arr.ind = TRUE)
+
+      ifelse(i==j,
+             WriteSnpPairs_sym,
+             WriteSnpPairs)(Zmatrix = ztest, indexArr = index,
+                            outfile = OUT)
+      rm(list = c("ztest", "index"))
+      gc()
+    ----------------------------------------------------------------
+
+getcor <- function(A = NULL,
+                   B = NULL,
+                   method = "pearson",
+                   ...){
+  method <- match.arg(method)
+  if(nrow(A) != nrow(B)) stop("Matrices A and B have different row numbers!")
+  Abar <- scale(A) * sqrt(1/(nrow(A)-1))
+  Bbar <- scale(B) * sqrt(1/(nrow(B)-1))
+  return(crossprod(Abar, Bbar))
+}
+
+FINISHED________________________________________
+ithChunk <- function(idx, n, chunk = 1000){
+  start <- (idx-1) * chunk + 1   #
+  return(if(idx < 1 || start>n){
+    numeric(0)   # this should not be reached
+  } else {
+    start:min(idx * chunk, n)   # take care of "incomplete" chunks
+  })
+}
+-----------------------------------------------------
+
+WriteSnpPairs <- function(Zmatrix,
+                          indexArr,
+                          outfile = "NONE",
+                          ...){
+  if(!is.null(indexArr))
+  {
+    if(is.matrix(indexArr))
+    {
+      SNP1 <- rownames(Zmatrix)[indexArr[,1]]
+      SNP2 <- colnames(Zmatrix)[indexArr[,2]]
+      Zscore <- Zmatrix[indexArr]
+    }else
+    {
+      SNP1 <- rownames(Zmatrix)[indexArr[1]]
+      SNP2 <- colnames(Zmatrix)[indexArr[2]]
+      Zscore <- Zmatrix[indexArr[1], indexArr[2]]
+    }
+    pairdata <- data.frame(cbind(SNP1, SNP2, Zscore), stringsAsFactors = FALSE)
+    rm(SNP1)
+    rm(SNP2)
+    rm(Zscore)
+    if (nrow(pairdata)>0){
+      pairdata$ZP <- ZtoP(pairdata$Zscore)
+      write.table(pairdata, outfile, col.names = FALSE, row.names = FALSE, append = TRUE, quote = FALSE)
+    }
+  }
+}
+
+WriteSnpPairs_sym <- function(Zmatrix,
+                              indexArr,
+                              outfile = "NONE",
+                              ...){
+  if(!is.null(indexArr))
+  {
+    indexArr.nodup <- indexArr[indexArr[,1] < indexArr[,2],]
+    if(is.matrix(indexArr.nodup))
+    {
+      SNP1 <- rownames(Zmatrix)[indexArr.nodup[,1]]
+      SNP2 <- colnames(Zmatrix)[indexArr.nodup[,2]]
+      Zscore <- Zmatrix[indexArr.nodup]
+    }else
+    {
+      SNP1 <- rownames(Zmatrix)[indexArr.nodup[1]]
+      SNP2 <- colnames(Zmatrix)[indexArr.nodup[2]]
+      Zscore <- Zmatrix[indexArr.nodup[1], indexArr.nodup[2]]
+    }
+
+    pairdata <- data.frame(cbind(SNP1, SNP2, Zscore),
+                           stringsAsFactors = FALSE)
+    rm(SNP1)
+    rm(SNP2)
+    rm(Zscore)
+    if (nrow(pairdata)>0){
+      pairdata$ZP <- ZtoP(pairdata$Zscore)
+      write.table(pairdata, outfile, col.names = FALSE, row.names = FALSE, append = TRUE, quote = FALSE)
+    }
+  }
+}
+*/
+
+
+
+
+
+
+epiblasterparallel <- function(geno,
+                               pheno,
+                               chunk = 1000,
+                               zpthres = 10e-06,
+                               outfile = "NONE",
+                               suffix = ".txt",
+                               ncores
+                               ){
+  start <- Sys.time()
+  zthres <- abs(qnorm(zpthres/2))
+  ## output head
+  # check whether output file exisit or not; if yes, delete
+  OUT <- paste0(outfile, suffix)
+  if(file.exists(OUT)) file.remove(OUT)
+  cat(paste("SNP1", "SNP2", "Zscore", "ZP",
+            sep = " "),
+      "\n",
+      file = OUT,
+      append = TRUE)   # why append? file was removed had it been present ...
+  
+  nSNP <- ncol(geno)
+  nsplits <- ceiling(nSNP / chunk)  # number of splits (i.e., of size chunk, possibly incomplete at end)
+  
+  print(paste("Preparing ",nsplits, " chunk loops..."))
+  
+  is.case <- pheno == 1
+  control <- as.matrix(geno[!is.case, ])    # ctrl.data
+  case <- as.matrix(geno[is.case, ])        # case.data
+  rm(is.case)
+  sd_tot <- sqrt(1/(nrow(control)-1) + 1/(nrow(case)-1))
+  gc()
+  
+  # Establishing cluster
+  cl <- makeCluster(ncores-1, type='PSOCK')
+
+  # Giving the cluster access to everything it will need
+  clusterExport(cl, c('getcor',
+                      'ithChunk',
+                      'WriteSnpPairs_sym',
+                      'WriteSnpPairs',
+                      'ZtoP'))
+  
+  # Turning future code into a process that can be parallelized
+  apply_ztest <- function(i,j,nSNP,chunk,control,zthres){
+    tryCatch({
+      ztest <- (getcor(A = as.matrix(case[, ithChunk(as.numeric(i), nSNP, chunk), drop = FALSE]),
+                       B = as.matrix(case[, ithChunk(as.numeric(j), nSNP, chunk), drop = FALSE]),
+                       method = "pearson")
+                -
+                  getcor(A = as.matrix(control[, ithChunk(as.numeric(i), nSNP, chunk), drop = FALSE]),
+                         B = as.matrix(control[, ithChunk(as.numeric(j), nSNP, chunk), drop = FALSE]),
+                         method = "pearson") )  /  sd_tot
+      index <- which(abs(ztest) >= zthres, arr.ind = TRUE)
+      
+      ifelse(i==j,
+             WriteSnpPairs_sym,
+             WriteSnpPairs)(Zmatrix = ztest, indexArr = index,
+                            outfile = OUT)
+      rm(list = c("ztest", "index"))
+      gc()
+    }, err = function(err){
+    }, finally = {
+    })
+  }
+
+
+
+episcan_parallelizable <- function(
+                          geno1,
+                          pheno,
+                          outfile = "episcan",
+                          suffix = ".txt",
+                          zpthres = 1e-6, 
+                          chunksize = 1000, 
+                          scale = TRUE,
+                          ncores=detectCores()
+                          ){
+  if (ncores > detectCores()){
+    stop("too many cores requested")
+  }
+  if (is.null(pheno)){
+    stop("pheno data not provided")
+  }
+  if(!is.vector(pheno)){
+    pheno <- as.vector(unlist(pheno))
+    if(length(pheno) != nrow(geno1)){
+      stop("Your phenotype and genotype data do not have matching lengths. Please check your input phenotype!")
+    }
+  }
+
+  if(is.null(geno1)){
+    stop("There is no given genotype data!")
+  }
+  chunksize <- min(chunksize, ncol(geno1))
+
+  cat(paste0("p-value threshold of Z test for output: ", zpthres), "\n")
+  cat(paste0("set chunksize: ", chunksize), "\n")
+  
+  if(scale){
+    geno1 <- scale(geno1)
+  }
+  gc()
+  print("episcan_parallelized starts:")
+  print(date())
+  chunksize <- checkchunksize(chunksize, ncol(geno1))
+  epiblasterparallel(geno = geno1,
+                     pheno = pheno,
+                     chunk = chunksize,
+                     zpthres = zpthres,
+                     outfile = outfile,
+                     suffix = suffix,
+                     ncores = ncores)
+}
