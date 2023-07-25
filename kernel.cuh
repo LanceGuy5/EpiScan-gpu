@@ -9,35 +9,11 @@ typedef struct Matrix {
     int height;
     double* elements;
 
-    __device__ void print_matrix() {
-        for (int i = 0; i < height; i++) {
-            for (int j = 0; j < width; j++) {
-                printf("%f, ", *(elements + i * width + j));
-            }
-            printf("\n");
-        }
-        printf("\n");
-    }
+    __device__ void print_matrix();
 
-    __device__ double mean() {
-        double total = 0;
-        for (int i = 0; i < height; i++) {
-            for (int j = 0; j < width; j++) {
-                total += *(elements + i * width + j);
-            }
-        }
-        return total / (width * height);
-    }
+    __device__ double mean();
 
-    __device__ double standard_dev() {
-        double total = 0;
-        for (int i = 0; i < height; i++) {
-            for (int j = 0; j < width; j++) {
-                total += pow((*(elements + i * width + j) - mean()), 2);
-            }
-        }
-        return sqrt((double)total / ((width * height) - 1));
-    }
+    __device__ double standard_dev();
 };
 
 /**

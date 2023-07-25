@@ -15,10 +15,6 @@
 */
 int main(int argc, char* argv[])
 {
-    //Parsing through cmd line arguments - add command line compatability later
-    for (int i = 0; i < argc; i++) {
-        printf("%s\n", argv[i]);
-    }
     //All required variables
     /*
         geno1,
@@ -38,9 +34,13 @@ int main(int argc, char* argv[])
         return 0;
     }
 
+    printf("File opened\n");
+
     std::vector<std::vector<std::string>> content;
     std::vector<std::string> row;
     std::string line, word;
+
+    printf("Reading file. . .\n");
 
     //Getting row number for data
     while (getline(data, line)) {
@@ -54,28 +54,37 @@ int main(int argc, char* argv[])
     //Processing phenotype data first cuz it is easier -> switch to using rows variable but for now just hardcoded
     Matrix phenotype_data{
         1,
-        content.size(),
-        new double[content.size()]
+        content.size() - 1,
+        new double[content.size() - 1]
     };
 
     //M(row, col) = *(M.elements + row * M.width + col)
-    for (int i = 0; i < content.size(); i++) {
-        phenotype_data.elements[i] = std::stod(content.at(i).at(1));
+    for (int i = 1; i < content.size(); i++) {
+        //printf("%s", (content.at(i).at(1)).c_str());
+        phenotype_data.elements[i - 1] = std::stod(content.at(i).at(1).c_str());
     }
 
-    Matrix A{
-        2,
-        3,
-        new double[6] {1.0, 2.0, 3.0, 4.0, 5.0, 6.0}
+    //Time to replicate with the genotype data :(
+    Matrix genotype_data{
+        content.at(0).size() - 2,
+        content.size() - 1,
+        new double[(content.at(0).size() - 2) * (content.size() - 1)]
     };
 
-    Matrix B{
-        2,
-        3,
-        new double[6] {7.0, 8.0, 9.0, 10.0, 11.0, 12.0}
-    };
+    //M(row, col) = *(M.elements + row * M.width + col)
+    for (int i = 1; i < content.size(); i++) {
+        for (int j = 2; j < content.at(0).size(); j++) {
+            genotype_data.elements[(i - 1) * genotype_data.width + j - 2] 
+                = std::stod(content.at(i).at(j).c_str());
+        }        
+    }
 
-    cudaError_t cudaStatus = EpiScan(phenotype_data, B);
+    printf("Matrices defined from data");
+
+    //Make sure I am not closing too early
+    data.close();
+
+    cudaError_t cudaStatus = EpiScan(phenotype_data, genotype_data);
 
     //cudaDeviceReset must be called before exiting in order for profiling and
     //tracing tools such as Nsight and Visual Profiler to show complete traces.
@@ -85,6 +94,5 @@ int main(int argc, char* argv[])
         return 1;
     }
 
-    data.close();
     return 0;
 }

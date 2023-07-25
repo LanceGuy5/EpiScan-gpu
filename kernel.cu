@@ -11,6 +11,36 @@
 
 #include <algorithm>
 
+__device__ void Matrix::print_matrix() {
+    for (int i = 0; i < height; i++) {
+        for (int j = 0; j < width; j++) {
+            printf("%f, ", *(elements + i * width + j));
+        }
+        printf("\n");
+    }
+    printf("\n");
+}
+
+__device__ double Matrix::mean() {
+    double total = 0;
+    for (int i = 0; i < height; i++) {
+        for (int j = 0; j < width; j++) {
+            total += *(elements + i * width + j);
+        }
+    }
+    return total / (width * height);
+}
+
+__device__ double Matrix::standard_dev() {
+    double total = 0;
+    for (int i = 0; i < height; i++) {
+        for (int j = 0; j < width; j++) {
+            total += __CUDA_RUNTIME_API_H__::pow((*(elements + i * width + j) - mean()), 2);
+        }
+    }
+    return sqrt((double)total / ((width * height) - 1));
+}
+
 /**
 * Matrix helper method cuz I couldn't figure out how to properly overload the operator. . .
 * @param first First matrix
