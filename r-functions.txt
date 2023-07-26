@@ -171,7 +171,7 @@ epiblasterparallel <- function(geno,
   }
 
 
-
+______________________TRANSFERRED____________________________
 episcan_parallelizable <- function(
                           geno1,
                           pheno,

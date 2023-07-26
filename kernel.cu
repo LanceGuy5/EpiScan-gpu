@@ -210,13 +210,29 @@ Multiply them together
                             outfile = OUT)
 
 */
-__global__ void EpiScanKernel(Matrix A, Matrix B) {
+__global__ void EpiScanKernel(Matrix genotype_data, 
+                              Matrix phenotype_data, 
+                              double* zpthres, 
+                              int* chunksize
+                             ) {
     printf("-----------KERNEL ACTIVATED-------------\n");
+    
+    //Check to make sure same number of cases for genotype and phenotype
+    if (genotype_data.height != phenotype_data.height) {
+        printf("A and B do not have the same number of elements. Please check your data!");
+        return;
+    }
+
+    //Check to make sure that the chunksize isn't greater than the width of the matrix
+    if (genotype_data.width > *chunksize) *chunksize = genotype_data.width;
+    
+
+    /*
     A.print_matrix();
     printf("\n");
     B.print_matrix();
     printf("\n");
-
+    */
     /*
     Matrix C = cross_product(A, B);
 
@@ -233,10 +249,18 @@ __global__ void EpiScanKernel(Matrix A, Matrix B) {
 
 // Matrix multiplication - Host code
 // Matrix dimensions are assumed to be multiples of BLOCK_SIZE************
-cudaError_t EpiScan(const Matrix A, const Matrix B) {
+cudaError_t EpiScan(const Matrix A, 
+                    const Matrix B, 
+                    const double zpthres, 
+                    const int chunksize
+                   ) {
     Matrix d_A = {};
     Matrix d_B = {};
+    double* d_zpthres;
+    int* d_chunksize;
     cudaError_t cudaStatus;
+
+    printf("EpiScan called!\n");
 
     // Choose which GPU to run on, change this on a multi-GPU system.
     cudaStatus = cudaSetDevice(0);
@@ -251,13 +275,13 @@ cudaError_t EpiScan(const Matrix A, const Matrix B) {
     d_A.height = A.height;
     cudaStatus = cudaMalloc(&d_A.elements, size); //Allocate the data on the CUDA device
     if (cudaStatus != cudaSuccess) {
-        printf("cudaMalloc failed!");
+        printf("d_A cudaMalloc failed!");
         goto Error;
     }
     cudaStatus = cudaMemcpy(d_A.elements, A.elements, size,
         cudaMemcpyHostToDevice); //Copy the memory stored in the Matrix struct into the allocated memory
     if (cudaStatus != cudaSuccess) {
-        printf("cudaMemcpy failed!");
+        printf("d_A cudaMemcpy failed!");
         goto Error;
     }
 
@@ -267,15 +291,43 @@ cudaError_t EpiScan(const Matrix A, const Matrix B) {
     d_B.height = B.height;
     cudaStatus = cudaMalloc(&d_B.elements, size); //Allocate the data on the CUDA device
     if (cudaStatus != cudaSuccess) {
-        printf("cudaMalloc failed!");
+        printf("d_B cudaMalloc failed!");
         goto Error;
     }
     cudaStatus = cudaMemcpy(d_B.elements, B.elements, size,
         cudaMemcpyHostToDevice); //Copy the memory stored in the Matrix struct into the allocated memory
     if (cudaStatus != cudaSuccess) {
-        printf("cudaMemcpy failed!");
+        printf("d_B cudaMemcpy failed!");
         goto Error;
     }
+
+    //Load zpthres to memory device
+    cudaStatus = cudaMalloc((void**) & d_zpthres, sizeof(double));
+    if (cudaStatus != cudaSuccess) {
+        printf("d_zpthres cudaMalloc failed!");
+        goto Error;
+    }
+    cudaStatus = cudaMemcpy(d_zpthres, &zpthres, sizeof(double),
+        cudaMemcpyHostToDevice);
+    if (cudaStatus != cudaSuccess) {
+        printf("d_zpthres cudaMemcpy failed!");
+        goto Error;
+    }
+
+    //Load chunksize to memory device
+    cudaStatus = cudaMalloc((void**)&d_chunksize, sizeof(int));
+    if (cudaStatus != cudaSuccess) {
+        printf("d_chunksize cudaMalloc failed!");
+        goto Error;
+    }
+    cudaStatus = cudaMemcpy(d_chunksize, &chunksize, sizeof(int),
+        cudaMemcpyHostToDevice);
+    if (cudaStatus != cudaSuccess) {
+        printf("d_chunksize cudaMemcpy failed!");
+        goto Error;
+    }
+
+    printf("Memory Allocated\n!");
 
     // Invoke kernel
 
@@ -288,7 +340,7 @@ cudaError_t EpiScan(const Matrix A, const Matrix B) {
     dim3 dimBlock(16, 16);
     dim3 dimGrid(B.width / dimBlock.x, A.height / dimBlock.y);
     //EpiScanKernel <<<dimGrid, dimBlock >>>(&d_A, &d_B);
-    EpiScanKernel <<<1, 1 >>> (d_A, d_B);
+    EpiScanKernel <<<1, 1 >>> (d_A, d_B, d_zpthres, d_chunksize);
 
     cudaDeviceSynchronize();
 
@@ -299,6 +351,16 @@ cudaError_t EpiScan(const Matrix A, const Matrix B) {
         goto Error;
     }
 
+    cudaFree(&d_A);
+    cudaFree(&d_B);
+    cudaFree(d_zpthres);
+    cudaFree(d_chunksize);
+
 Error:
+    cudaFree(&d_A);
+    cudaFree(&d_B);
+    cudaFree(d_zpthres);
+    cudaFree(d_chunksize);
+
     return cudaStatus;
 }

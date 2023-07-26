@@ -4,6 +4,8 @@
 
 #include <stdio.h>
 
+#define MAX_HEADER_LENGTH 25
+
 typedef struct Matrix {
     int width;
     int height;
@@ -14,7 +16,7 @@ typedef struct Matrix {
     __device__ double mean();
 
     __device__ double standard_dev();
-};
+} Matrix;
 
 /**
 * Struct to hold a range of values
@@ -32,6 +34,9 @@ __device__ Matrix cross_product(Matrix A, Matrix B);
 __device__ Range ithChunk(int idx, int n, int chunk);
 __device__ Matrix scale(Matrix A);
 __device__ Matrix getcor(Matrix A, Matrix B);
-__global__ void EpiScanKernel(Matrix A, Matrix B);
-__global__ void EpiScanKernel(Matrix A, Matrix B);
-cudaError_t EpiScan(const Matrix A, const Matrix B);
+__global__ void EpiScanKernel(Matrix genotype_data, 
+                              Matrix phenotype_data, 
+                              double * zpthres, 
+                              int * chunksize
+                             );
+cudaError_t EpiScan(const Matrix A, const Matrix B, double zpthres, int chunksize);
