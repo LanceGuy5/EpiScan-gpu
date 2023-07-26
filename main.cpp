@@ -12,7 +12,7 @@
 
 #define TEST_PATH "C:\\Users\\lance\\Desktop\\data\\data\\ALVM_imp_maf20perc_w_Target.csv"
 #define ZPTHRES 1e-6
-#define CHUNKSIZE 1000
+#define CHUNKSIZE 20
 #define MAX_LABEL_SIZE 25
 #define MAX_COLS 20000
 

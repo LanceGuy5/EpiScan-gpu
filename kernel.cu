@@ -210,22 +210,35 @@ Multiply them together
                             outfile = OUT)
 
 */
-__global__ void EpiScanKernel(Matrix genotype_data, 
-                              Matrix phenotype_data, 
+__global__ void EpiScanKernel(Matrix case_mat, 
+                              Matrix control_mat, 
                               double* zpthres, 
-                              int* chunksize
-                             ) {
+                              int* chunksize,
+                              int* geno_height,
+                              int* geno_width,
+                              int* pheno_height,
+                              int* pheno_width) {
     printf("-----------KERNEL ACTIVATED-------------\n");
     
     //Check to make sure same number of cases for genotype and phenotype
-    if (genotype_data.height != phenotype_data.height) {
+    if (*geno_height != *pheno_height) {
         printf("A and B do not have the same number of elements. Please check your data!");
         return;
     }
 
     //Check to make sure that the chunksize isn't greater than the width of the matrix
-    if (genotype_data.width > *chunksize) *chunksize = genotype_data.width;
+    if (*geno_width < *chunksize) *chunksize = *geno_width;
     
+    int n_SNP = *geno_width;
+    int n_splits = (int)ceilf((float)n_SNP / (float)*chunksize);
+
+    printf("Preparing %d chunk loops...\n", n_splits);
+
+    double sd_tot = __CUDA_RUNTIME_H__::sqrt(
+        (1.0 / (double)(control_mat.height - 1)) + (1.0 / (double)(case_mat.height - 1))
+    );
+
+    printf("%d, %d", control_mat.height, case_mat.height);
 
     /*
     A.print_matrix();
@@ -249,15 +262,18 @@ __global__ void EpiScanKernel(Matrix genotype_data,
 
 // Matrix multiplication - Host code
 // Matrix dimensions are assumed to be multiples of BLOCK_SIZE************
-cudaError_t EpiScan(const Matrix A, 
-                    const Matrix B, 
+cudaError_t EpiScan(const Matrix genotype_data, 
+                    const Matrix phenotype_data, 
                     const double zpthres, 
-                    const int chunksize
-                   ) {
-    Matrix d_A = {};
-    Matrix d_B = {};
+                    const int chunksize) {
+    Matrix d_case = {};
+    Matrix d_control = {};
     double* d_zpthres;
     int* d_chunksize;
+    int* d_geno_height;
+    int* d_geno_width;
+    int* d_pheno_height;
+    int* d_pheno_width;
     cudaError_t cudaStatus;
 
     printf("EpiScan called!\n");
@@ -269,35 +285,64 @@ cudaError_t EpiScan(const Matrix A,
         goto Error;
     }
 
-    // Load A to device memory
-    size_t size = A.width * A.height * sizeof(double); //Calculate the total amount of memory to allocate for matrix A
-    d_A.width = A.width;
-    d_A.height = A.height;
-    cudaStatus = cudaMalloc(&d_A.elements, size); //Allocate the data on the CUDA device
+    //Determine the case and control matrices
+    int control_count = 0, case_count = 0;
+    for (int i = 0; i < phenotype_data.height; i++) {
+        if (phenotype_data.elements[i] == 0.0) control_count++;
+        else case_count++;
+    }
+
+    Matrix control_mat{ genotype_data.width, control_count, new double[control_count * genotype_data.width] };
+    Matrix case_mat{ genotype_data.width, case_count, new double[case_count * genotype_data.width] };
+
+    // M(row, col) = *(M.elements + row * M.width + col)
+    control_count = (case_count = 0);
+    for (int i = 0; i < phenotype_data.height; i++) {
+        if (phenotype_data.elements[i] == 0.0) {
+            for (int j = 0; j < genotype_data.width; j++) {
+                control_mat.elements[control_count * control_mat.width + j]
+                    = genotype_data.elements[i * genotype_data.width + j];
+            }
+            control_count++;
+        }
+        else {
+            for (int j = 0; j < genotype_data.width; j++) {
+                *(case_mat.elements + case_count * case_mat.width + j)
+                    = *(genotype_data.elements + i * genotype_data.width + j);
+            }
+            case_count++;
+        }
+    }
+
+    // Load case to device memory
+    size_t size = case_mat.width * case_mat.height * sizeof(double); //Calculate the total amount of memory to allocate for matrix A
+    d_case.width = case_mat.width;
+    d_case.height = case_mat.height;
+    cudaStatus = cudaMalloc(&d_case.elements, size); //Allocate the data on the CUDA device
     if (cudaStatus != cudaSuccess) {
-        printf("d_A cudaMalloc failed!");
+        printf("d_case cudaMalloc failed!");
         goto Error;
     }
-    cudaStatus = cudaMemcpy(d_A.elements, A.elements, size,
+    cudaStatus = cudaMemcpy(d_case.elements, case_mat.elements, size,
         cudaMemcpyHostToDevice); //Copy the memory stored in the Matrix struct into the allocated memory
     if (cudaStatus != cudaSuccess) {
-        printf("d_A cudaMemcpy failed!");
+        printf("d_case cudaMemcpy failed!");
         goto Error;
     }
 
-    // Load B to device memory
-    size = B.width * B.height * sizeof(double); //Calculate the total amount of memory to allocate for matrix A
-    d_B.width = B.width;
-    d_B.height = B.height;
-    cudaStatus = cudaMalloc(&d_B.elements, size); //Allocate the data on the CUDA device
+    // Load control to device memory
+    size = control_mat.width * control_mat.height * sizeof(double); //Calculate the total amount of memory to allocate for matrix A
+    d_control.width = control_mat.width;
+    d_control.height = control_mat.height;
+    cudaStatus = cudaMalloc(&d_control.elements, size); //Allocate the data on the CUDA device
     if (cudaStatus != cudaSuccess) {
-        printf("d_B cudaMalloc failed!");
+        printf("d_control cudaMalloc failed!");
         goto Error;
     }
-    cudaStatus = cudaMemcpy(d_B.elements, B.elements, size,
+    cudaStatus = cudaMemcpy(d_control.elements, control_mat.elements, size,
         cudaMemcpyHostToDevice); //Copy the memory stored in the Matrix struct into the allocated memory
     if (cudaStatus != cudaSuccess) {
-        printf("d_B cudaMemcpy failed!");
+        printf("d_control cudaMemcpy failed!");
         goto Error;
     }
 
@@ -327,18 +372,64 @@ cudaError_t EpiScan(const Matrix A,
         goto Error;
     }
 
+    //--------------------------------------------------------------------------------
+    //Load chunksize to memory device
+    cudaStatus = cudaMalloc((void**)&d_geno_height, sizeof(int));
+    if (cudaStatus != cudaSuccess) {
+        printf("d_geno_height cudaMalloc failed!");
+        goto Error;
+    }
+    cudaStatus = cudaMemcpy(d_geno_height, &genotype_data.height, sizeof(int),
+        cudaMemcpyHostToDevice);
+    if (cudaStatus != cudaSuccess) {
+        printf("d_geno_height cudaMemcpy failed!");
+        goto Error;
+    }
+
+    //Load chunksize to memory device
+    cudaStatus = cudaMalloc((void**)&d_geno_width, sizeof(int));
+    if (cudaStatus != cudaSuccess) {
+        printf("d_geno_width cudaMalloc failed!");
+        goto Error;
+    }
+    cudaStatus = cudaMemcpy(d_geno_width, &genotype_data.width, sizeof(int),
+        cudaMemcpyHostToDevice);
+    if (cudaStatus != cudaSuccess) {
+        printf("d_geno_width cudaMemcpy failed!");
+        goto Error;
+    }
+
+    //Load chunksize to memory device
+    cudaStatus = cudaMalloc((void**)&d_pheno_height, sizeof(int));
+    if (cudaStatus != cudaSuccess) {
+        printf("d_pheno_height cudaMalloc failed!");
+        goto Error;
+    }
+    cudaStatus = cudaMemcpy(d_pheno_height, &phenotype_data.height, sizeof(int),
+        cudaMemcpyHostToDevice);
+    if (cudaStatus != cudaSuccess) {
+        printf("d_pheno_height cudaMemcpy failed!");
+        goto Error;
+    }
+
+    //Load chunksize to memory device
+    cudaStatus = cudaMalloc((void**)&d_pheno_width, sizeof(int));
+    if (cudaStatus != cudaSuccess) {
+        printf("d_pheno_width cudaMalloc failed!");
+        goto Error;
+    }
+    cudaStatus = cudaMemcpy(d_pheno_width, &phenotype_data.width, sizeof(int),
+        cudaMemcpyHostToDevice);
+    if (cudaStatus != cudaSuccess) {
+        printf("d_pheno_width cudaMemcpy failed!");
+        goto Error;
+    }
+
     printf("Memory Allocated!\n");
 
     // Invoke kernel
-
-    //struct cudaDeviceProp properties;
-    //cudaGetDeviceProperties(&properties, device);
-    //cout << "using " << properties.multiProcessorCount << " multiprocessors" << endl;
-    //cout << "max threads per processor: " << properties.maxThreadsPerMultiProcessor << endl;
-
-    dim3 dimBlock(16, 16);
-    dim3 dimGrid(B.width / dimBlock.x, A.height / dimBlock.y);
-    EpiScanKernel <<<dimGrid, dimBlock>>> (d_A, d_B, d_zpthres, d_chunksize);
+    //Only need 1 thread and 1 block because I will be parallelizing the rest within this kernel
+    EpiScanKernel <<<1,1>>> (d_case, d_control, d_zpthres, d_chunksize, d_geno_height, d_geno_width, d_pheno_height, d_pheno_width);
 
     cudaDeviceSynchronize();
 
@@ -349,16 +440,24 @@ cudaError_t EpiScan(const Matrix A,
         goto Error;
     }
 
-    cudaFree(&d_A);
-    cudaFree(&d_B);
+    cudaFree(&d_case);
+    cudaFree(&d_control);
     cudaFree(d_zpthres);
     cudaFree(d_chunksize);
+    cudaFree(d_geno_height);
+    cudaFree(d_geno_width);
+    cudaFree(d_pheno_height);
+    cudaFree(d_pheno_width);
 
 Error:
-    cudaFree(&d_A);
-    cudaFree(&d_B);
+    cudaFree(&d_case);
+    cudaFree(&d_control);
     cudaFree(d_zpthres);
     cudaFree(d_chunksize);
+    cudaFree(d_geno_height);
+    cudaFree(d_geno_width);
+    cudaFree(d_pheno_height);
+    cudaFree(d_pheno_width);
 
     return cudaStatus;
 }

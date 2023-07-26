@@ -169,7 +169,10 @@ epiblasterparallel <- function(geno,
     }, finally = {
     })
   }
-
+  for ( i in 1:nsplits)
+  {
+    parLapply(cl, c(i:nsplits), apply_ztest, i=i, nSNP=nSNP,chunk=chunk,control=control,zthres=zthres) # Test the list here
+  }
 
 ______________________TRANSFERRED____________________________
 episcan_parallelizable <- function(

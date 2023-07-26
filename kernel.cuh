@@ -34,9 +34,12 @@ __device__ Matrix cross_product(Matrix A, Matrix B);
 __device__ Range ithChunk(int idx, int n, int chunk);
 __device__ Matrix scale(Matrix A);
 __device__ Matrix getcor(Matrix A, Matrix B);
-__global__ void EpiScanKernel(Matrix genotype_data, 
-                              Matrix phenotype_data, 
-                              double * zpthres, 
-                              int * chunksize
-                             );
+__global__ void EpiScanKernel(Matrix d_case, 
+                              Matrix d_control, 
+                              double* d_zpthres, 
+                              int* d_chunksize, 
+                              int* d_geno_height, 
+                              int* d_geno_width, 
+                              int* d_pheno_height, 
+                              int* d_pheno_width);
 cudaError_t EpiScan(const Matrix A, const Matrix B, double zpthres, int chunksize);
