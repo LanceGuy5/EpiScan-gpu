@@ -138,6 +138,8 @@ int main(int argc, char* argv[])
     }
     */
 
+    //TODO DEAL WITH CREATING OUTFILE - I DO NOT FEEL LIKE DOING THIS RIGHT NOW
+
     printf("Write executed properly, executing Kernel. . .\n");
 
     //Make sure I am not closing too early

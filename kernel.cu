@@ -327,7 +327,7 @@ cudaError_t EpiScan(const Matrix A,
         goto Error;
     }
 
-    printf("Memory Allocated\n!");
+    printf("Memory Allocated!\n");
 
     // Invoke kernel
 
@@ -336,11 +336,9 @@ cudaError_t EpiScan(const Matrix A,
     //cout << "using " << properties.multiProcessorCount << " multiprocessors" << endl;
     //cout << "max threads per processor: " << properties.maxThreadsPerMultiProcessor << endl;
 
-
     dim3 dimBlock(16, 16);
     dim3 dimGrid(B.width / dimBlock.x, A.height / dimBlock.y);
-    //EpiScanKernel <<<dimGrid, dimBlock >>>(&d_A, &d_B);
-    EpiScanKernel <<<1, 1 >>> (d_A, d_B, d_zpthres, d_chunksize);
+    EpiScanKernel <<<dimGrid, dimBlock>>> (d_A, d_B, d_zpthres, d_chunksize);
 
     cudaDeviceSynchronize();
 
