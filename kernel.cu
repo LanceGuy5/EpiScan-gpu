@@ -41,6 +41,25 @@ __device__ double Matrix::standard_dev() {
     return sqrt((double)total / ((width * height) - 1));
 }
 
+__device__ Matrix* sub_matrix(Matrix& main, Range height, Range width) {
+    Matrix ret = {
+        width.calc_dist(),
+        height.calc_dist(),
+        new double[width.calc_dist() * height.calc_dist()]
+    };
+    for (int i = height.min; i < height.max; i++) {
+        for (int j = width.min; j < width.max; i++) {
+            ret.elements[i * ret.width + j]
+                = main.elements[i * main.width + j];
+        }
+    }
+    return &ret;
+}
+
+__device__ constexpr const int Range::calc_dist() {
+    return max - min;
+}
+
 /**
 * Matrix helper method cuz I couldn't figure out how to properly overload the operator. . .
 * @param first First matrix
@@ -70,10 +89,7 @@ __device__ Matrix subtract_matrices(const Matrix& first, const Matrix& other) {
 */
 __device__ Matrix transpose(Matrix A)
 {
-    Matrix ret;
-    ret.width = A.height;
-    ret.height = A.width;
-    ret.elements = new double[sizeof(A.elements) / sizeof(A.elements[0])];
+    Matrix ret{ A.height, A.width, new double[sizeof(A.elements) / sizeof(A.elements[0])] };
     for (int i = 0; i < A.height; i++) {
         for (int j = 0; j < A.width; j++) {
             // M(row, col) = *(M.elements + row * M.width + col)
@@ -92,7 +108,6 @@ __device__ Matrix transpose(Matrix A)
 */
 __device__ Matrix cross_product(Matrix A, Matrix B)
 {
-    Matrix C;
     Matrix a_transposed = transpose(A); //Transposed copy of A
 
     //Now we need to multiply the two matrices together
@@ -101,9 +116,7 @@ __device__ Matrix cross_product(Matrix A, Matrix B)
         return;
     }
 
-    C.width = a_transposed.height;
-    C.height = B.width;
-    C.elements = new double[a_transposed.height * B.width];
+    Matrix C{ a_transposed.height, B.width, new double[a_transposed.height * B.width] };
 
     //First for loop -> per a_transposed row
     for (int k = 0; k < a_transposed.height; k++) {
@@ -123,6 +136,15 @@ __device__ Matrix cross_product(Matrix A, Matrix B)
     return C;
 }
 
+__device__ void mat_divide(Matrix& matrix, double divisor) {
+    for (int i = 0; i < matrix.height; i++) {
+        for (int j = 0; j < matrix.width; j++) {
+            *(matrix.elements + i * matrix.width + j)
+                = *(matrix.elements + i * matrix.width + j) / divisor;
+        }
+    }
+}
+
 /**
 * Method to calculate the chunk range
 * @param idx
@@ -133,8 +155,8 @@ __device__ Matrix cross_product(Matrix A, Matrix B)
 __device__ Range ithChunk(int idx, int n, int chunk)
 {
     int start = (idx - 1) * chunk;
-    if (idx < 0 || start > n) return Range{0,0}; // Should not happen!
-    else return Range{start, (int)__CUDA_RUNTIME_H__::fmin((double)(idx * chunk), (double)n)}; //Make sure no rounding
+    if (idx < 1 || start > n) return Range{0,0}; // Should not happen!
+    else return Range{start, (int)__CUDA_RUNTIME_H__::fmin((double)(idx * chunk), (double)(n + 1))}; //Make sure no rounding
 }
 
 /**
@@ -210,6 +232,91 @@ Multiply them together
                             outfile = OUT)
 
 */
+__global__ void ZTestKernel(int* i, 
+                            int* thread_dim,
+                            int* n_SNP, 
+                            int* chunksize, 
+                            Matrix control_mat, 
+                            Matrix case_mat,
+                            double* zpthres,
+                            double* sd_tot,
+                            int* d_flag) {
+
+    //Find matrix ranges for analysis based on chunks
+    //i = i, j = threadIdx.x
+    Range i_chunk = ithChunk(*i, threadIdx.x, *chunksize);
+    Range j_chunk = ithChunk(*i, threadIdx.x, *chunksize);
+
+    //Allocate the space for each of these arrays before use using cudaMalloc
+    double* A_chunk_case_data = new double[i_chunk.calc_dist() * case_mat.height];
+    double* B_chunk_case_data = new double[j_chunk.calc_dist() * case_mat.height];
+    double* A_chunk_control_data = new double[i_chunk.calc_dist() * control_mat.height];
+    double* B_chunk_control_data = new double[j_chunk.calc_dist() * control_mat.height];
+
+    //Feed allocated arrays into matrix variables for ease of access
+    Matrix A_chunk_case{ i_chunk.calc_dist(), case_mat.height, A_chunk_case_data };
+    Matrix B_chunk_case{ j_chunk.calc_dist(), case_mat.height, B_chunk_case_data };
+    Matrix A_chunk_control{ i_chunk.calc_dist(), control_mat.height, A_chunk_control_data };
+    Matrix B_chunk_control{ j_chunk.calc_dist(), control_mat.height, B_chunk_control_data };
+    
+    //Writing data to arrays here
+    for (int i = 0; i < A_chunk_case.height; i++) {
+        for (int j = 0; j < A_chunk_case.width; j++) {
+            A_chunk_case.elements[i * A_chunk_case.width + j]
+                = case_mat.elements[i * A_chunk_case.width + j + i_chunk.min]; //TODO CHECK
+        }
+    }
+
+    for(int i = 0; i < A_chunk_case.height; i++) {
+        for (int j = 0; j < A_chunk_case.width; j++) {
+            printf("%f, ", A_chunk_case.elements[i * A_chunk_case.width + j]);
+        }
+        printf("\n");
+    }
+
+    __syncthreads(); //Not real error
+
+    /*
+    Matrix* z_test = &subtract_matrices(
+        getcor(
+            *A_chunk_case,
+            *B_chunk_case
+        ),
+        getcor(
+            *A_chunk_control,
+            *B_chunk_control
+        )
+    );
+    mat_divide(z_test, sd_tot);
+    */
+
+    printf("%d z_test performed\n", threadIdx.x);
+
+    free(A_chunk_case_data);
+    free(B_chunk_case_data);
+    free(A_chunk_control_data);
+    free(B_chunk_control_data);
+
+    __syncthreads(); //Not real error
+
+    if (threadIdx.x == *thread_dim) {
+        *d_flag = 1;
+    }
+
+}
+
+/**
+* Kernel to represent the main bulk of the cluster division and management for episcan
+* It also takes care of exporting "entries" to shared memory (TODO)
+* @param case_mat a matrix representing the case data
+* @param control_mat a matrix representing the control data
+* @param zpthres the z threshold for the z test kernel
+* @param chunksize the size of chunks (process division)
+* @geno_height the height of the geno data - num of cases
+* @param geno_width the width of the geno data - num of features
+* @param pheno_height the height of the pheno data - num of cases
+* @param pheno_width the width of the pheno data - should be 1
+*/
 __global__ void EpiScanKernel(Matrix case_mat, 
                               Matrix control_mat, 
                               double* zpthres, 
@@ -217,7 +324,8 @@ __global__ void EpiScanKernel(Matrix case_mat,
                               int* geno_height,
                               int* geno_width,
                               int* pheno_height,
-                              int* pheno_width) {
+                              int* pheno_width,
+                              int* d_flag) {
     printf("-----------KERNEL ACTIVATED-------------\n");
     
     //Check to make sure same number of cases for genotype and phenotype
@@ -238,25 +346,32 @@ __global__ void EpiScanKernel(Matrix case_mat,
         (1.0 / (double)(control_mat.height - 1)) + (1.0 / (double)(case_mat.height - 1))
     );
 
-    printf("%d, %d", control_mat.height, case_mat.height);
+    //Check to make sure dims are right - they are
+    //printf("%d, %d\n", control_mat.height, case_mat.height);
+    //printf("%d, %d\n", control_mat.width, case_mat.width);
 
-    /*
-    A.print_matrix();
-    printf("\n");
-    B.print_matrix();
-    printf("\n");
-    */
-    /*
-    Matrix C = cross_product(A, B);
+    //Here is where the normal cluster code belongs -> time to divide into a different kernel :(
+    //Chunk calculation starts at 1
+    for (int i = 1; i <= n_splits; i++) {
+        Range curr_range = { i, n_splits };
+        int thread_dim = (curr_range.max - curr_range.min) + 1;
+        //TODO MAKE MORE SCALABLE THAN USER REQUIREMENT
+        if (thread_dim > 1024) {
+            printf("Thread dim %d is greater than 1024, increase chunk size!", thread_dim);
+            return;
+        }
+        //Max number of threads per block is 1024t/b
+        //printf("%d\n", thread_dim);
+        
+        //1 Block (maybe increase to increase parallelization)
+        printf("------------------Chunk %d started--------------------\n", i);
+        ZTestKernel <<<1,thread_dim>>> (&i, &thread_dim, &n_SNP, chunksize, control_mat, case_mat, zpthres, &sd_tot, d_flag);
+        while (*d_flag != 1) {}
+        *d_flag = 0;
+        printf("------------------Chunk %d finished--------------------\n", i);
+    }
+    
 
-    C.print_matrix();
-
-    Matrix scaled = scale(A);
-    scaled.print_matrix();
-
-    Matrix corr = getcor(A, B);
-    corr.print_matrix();
-    */
     printf("-----------KERNEL FINISHED-------------\n");
 }
 
@@ -266,14 +381,15 @@ cudaError_t EpiScan(const Matrix genotype_data,
                     const Matrix phenotype_data, 
                     const double zpthres, 
                     const int chunksize) {
-    Matrix d_case = {};
-    Matrix d_control = {};
     double* d_zpthres;
     int* d_chunksize;
     int* d_geno_height;
     int* d_geno_width;
     int* d_pheno_height;
     int* d_pheno_width;
+
+    int* d_flag;
+
     cudaError_t cudaStatus;
 
     printf("EpiScan called!\n");
@@ -284,6 +400,8 @@ cudaError_t EpiScan(const Matrix genotype_data,
         fprintf(stderr, "cudaSetDevice failed!  Do you have a CUDA-capable GPU installed?");
         goto Error;
     }
+
+    printf("Start data allocation/movement\n");
 
     //Determine the case and control matrices
     int control_count = 0, case_count = 0;
@@ -315,9 +433,8 @@ cudaError_t EpiScan(const Matrix genotype_data,
     }
 
     // Load case to device memory
+    Matrix d_case = {case_mat.width, case_mat.height, new double[case_mat.width * case_mat.height]};
     size_t size = case_mat.width * case_mat.height * sizeof(double); //Calculate the total amount of memory to allocate for matrix A
-    d_case.width = case_mat.width;
-    d_case.height = case_mat.height;
     cudaStatus = cudaMalloc(&d_case.elements, size); //Allocate the data on the CUDA device
     if (cudaStatus != cudaSuccess) {
         printf("d_case cudaMalloc failed!");
@@ -331,9 +448,8 @@ cudaError_t EpiScan(const Matrix genotype_data,
     }
 
     // Load control to device memory
+    Matrix d_control = { control_mat.width, control_mat.height, new double[control_mat.width * control_mat.height]};
     size = control_mat.width * control_mat.height * sizeof(double); //Calculate the total amount of memory to allocate for matrix A
-    d_control.width = control_mat.width;
-    d_control.height = control_mat.height;
     cudaStatus = cudaMalloc(&d_control.elements, size); //Allocate the data on the CUDA device
     if (cudaStatus != cudaSuccess) {
         printf("d_control cudaMalloc failed!");
@@ -373,7 +489,7 @@ cudaError_t EpiScan(const Matrix genotype_data,
     }
 
     //--------------------------------------------------------------------------------
-    //Load chunksize to memory device
+    //Load d_geno_height to memory device
     cudaStatus = cudaMalloc((void**)&d_geno_height, sizeof(int));
     if (cudaStatus != cudaSuccess) {
         printf("d_geno_height cudaMalloc failed!");
@@ -386,7 +502,7 @@ cudaError_t EpiScan(const Matrix genotype_data,
         goto Error;
     }
 
-    //Load chunksize to memory device
+    //Load d_geno_width to memory device
     cudaStatus = cudaMalloc((void**)&d_geno_width, sizeof(int));
     if (cudaStatus != cudaSuccess) {
         printf("d_geno_width cudaMalloc failed!");
@@ -399,7 +515,7 @@ cudaError_t EpiScan(const Matrix genotype_data,
         goto Error;
     }
 
-    //Load chunksize to memory device
+    //Load d_pheno_height to memory device
     cudaStatus = cudaMalloc((void**)&d_pheno_height, sizeof(int));
     if (cudaStatus != cudaSuccess) {
         printf("d_pheno_height cudaMalloc failed!");
@@ -412,7 +528,7 @@ cudaError_t EpiScan(const Matrix genotype_data,
         goto Error;
     }
 
-    //Load chunksize to memory device
+    //Load d_pheno_width to memory device
     cudaStatus = cudaMalloc((void**)&d_pheno_width, sizeof(int));
     if (cudaStatus != cudaSuccess) {
         printf("d_pheno_width cudaMalloc failed!");
@@ -425,12 +541,18 @@ cudaError_t EpiScan(const Matrix genotype_data,
         goto Error;
     }
 
+    //Load d_flag to memory device
+    cudaStatus = cudaMalloc((void**)&d_flag, sizeof(int));
+    if (cudaStatus != cudaSuccess) {
+        printf("d_pheno_width cudaMalloc failed!");
+        goto Error;
+    }
+
     printf("Memory Allocated!\n");
 
     // Invoke kernel
     //Only need 1 thread and 1 block because I will be parallelizing the rest within this kernel
-    EpiScanKernel <<<1,1>>> (d_case, d_control, d_zpthres, d_chunksize, d_geno_height, d_geno_width, d_pheno_height, d_pheno_width);
-
+    EpiScanKernel <<<1,1>>> (d_case, d_control, d_zpthres, d_chunksize, d_geno_height, d_geno_width, d_pheno_height, d_pheno_width, d_flag);
     cudaDeviceSynchronize();
 
     // Check for any errors launching the kernel
@@ -448,6 +570,7 @@ cudaError_t EpiScan(const Matrix genotype_data,
     cudaFree(d_geno_width);
     cudaFree(d_pheno_height);
     cudaFree(d_pheno_width);
+    cudaFree(d_flag);
 
 Error:
     cudaFree(&d_case);
@@ -458,6 +581,7 @@ Error:
     cudaFree(d_geno_width);
     cudaFree(d_pheno_height);
     cudaFree(d_pheno_width);
+    cudaFree(d_flag);
 
     return cudaStatus;
 }

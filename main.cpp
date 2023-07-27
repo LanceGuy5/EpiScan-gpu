@@ -12,7 +12,6 @@
 
 #define TEST_PATH "C:\\Users\\lance\\Desktop\\data\\data\\ALVM_imp_maf20perc_w_Target.csv"
 #define ZPTHRES 1e-6
-#define CHUNKSIZE 20
 #define MAX_LABEL_SIZE 25
 #define MAX_COLS 20000
 
@@ -148,7 +147,7 @@ int main(int argc, char* argv[])
     cudaError_t cudaStatus = EpiScan(genotype_data, 
                                      phenotype_data, 
                                      ZPTHRES, 
-                                     CHUNKSIZE);
+                                     CHUNK_SIZE);
 
     //Ok so the reason I never pass the feature_labels array into CUDA memory -> data transfer isn't necessary
     // and it would be stored in unified memory (char related memory management) which I do not want. Rather, 
