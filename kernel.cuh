@@ -8,19 +8,6 @@
 #define CHUNK_SIZE 100
 #define DATA_HEIGHT 713
 
-typedef struct Matrix {
-    const int width;
-    const int height;
-    double* elements;
-
-    __device__ void print_matrix();
-
-    __device__ double mean();
-
-    __device__ double standard_dev();
-
-} ;
-
 /**
 * Struct to hold a range of values
 * @param min Minimum range value
@@ -30,7 +17,22 @@ typedef struct Range {
     const int min;
     const int max;
 
-    __device__ constexpr const int calc_dist();
+    __device__ int calc_dist();
+
+    __device__ void print_range();
+};
+
+typedef struct Matrix {
+    const int width;
+    const int height;
+    double* elements;
+
+    __device__ void print_matrix();
+
+    __device__ double mean();
+
+    __device__ double standard_dev(double mean);
+
 } ;
 
 typedef struct Entry {
@@ -51,9 +53,8 @@ __global__ void EpiScanKernel(
     int* d_pheno_width,
     int* d_flag);
 __global__ void ZTestKernel(
-    int* i,
-    int* thread_dim,
-    int* n_SNP,
+    int i,
+    int* block_dim,
     int* chunksize,
     Matrix control_mat,
     Matrix case_mat,
