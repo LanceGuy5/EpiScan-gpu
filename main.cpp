@@ -10,10 +10,18 @@
 #include <vector>
 #include <sstream>
 
-#define TEST_PATH "C:\\Users\\lance\\Desktop\\data\\data\\ALVM_imp_maf20perc_w_Target.csv"
-#define ZPTHRES 1e-6
-#define MAX_LABEL_SIZE 25
-#define MAX_COLS 20000
+#ifndef TEST_PATH
+    #define TEST_PATH "C:\\Users\\lance\\Desktop\\data\\data\\ALVM_imp_maf20perc_w_Target.csv"
+#endif
+#ifndef ZPTHRES
+    #define ZPTHRES 3//1e-6
+#endif
+#ifndef MAX_LABEL_SIZE
+    #define MAX_LABEL_SIZE 25
+#endif
+#ifndef MAX_COLS
+    #define MAX_COLS 20000
+#endif
 
 /**
 * Utility method for CSV line parsing

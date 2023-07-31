@@ -6,6 +6,7 @@
 
 #include "cuda_runtime.h"
 #include "device_launch_parameters.h"
+#include "math.h"
 
 #include "kernel.cuh"
 
@@ -24,24 +25,54 @@ __device__ void Matrix::print_matrix() {
     printf("\n");
 }
 
-__device__ double Matrix::mean() {
-    double total = 0;
+__host__ void Matrix::host_print_matrix() {
     for (int i = 0; i < height; i++) {
         for (int j = 0; j < width; j++) {
-            total += *(elements + i * width + j);
+            printf("%f, ", *(elements + i * width + j));
         }
+        printf("\n");
     }
-    return total / (width * height);
+    printf("\n");
 }
 
-__device__ double Matrix::standard_dev(double mean) {
+__device__ double Matrix::mean(int column) {
     double total = 0;
     for (int i = 0; i < height; i++) {
-        for (int j = 0; j < width; j++) {
-            total += pow((*(elements + i * width + j) - mean), 2);
-        }
+        //for (int j = 0; j < width; j++) {
+        total += *(elements + i * width + column);
+        //}
     }
-    return sqrt((double)total / ((width * height) - 1));
+    return total / height;
+}
+
+__host__ double Matrix::host_mean(int column) {
+    double total = 0;
+    for (int i = 0; i < height; i++) {
+    //for (int j = 0; j < width; j++) {
+        total += *(elements + i * width + column);
+    //}
+    }
+    return total / height;
+}
+
+__device__ double Matrix::standard_dev(double mean, int column) {
+    double total = 0;
+    for (int i = 0; i < height; i++) {
+        //for (int j = 0; j < width; j++) {
+            total += pow((*(elements + i * width + column) - mean), 2);
+        //}
+    }
+    return sqrt((double)total / (height - 1));
+}
+
+__host__ double Matrix::host_standard_dev(double mean, int column) {
+    double total = 0;
+    for (int i = 0; i < height; i++) {
+        //for (int j = 0; j < width; j++) {
+        total += pow((*(elements + i * width + column) - mean), 2);
+        //}
+    }
+    return sqrt((double)total / (height - 1));
 }
 
 __device__ Matrix* sub_matrix(Matrix& main, Range height, Range width) {
@@ -65,6 +96,10 @@ __device__ int Range::calc_dist() {
 
 __device__ void Range::print_range() {
     printf("%d, %d\n", min, max);
+}
+
+__device__ void Entry::print_entry() {
+    printf("%d, %d, %.15f, %.15f\n", id_one, id_two, z_score, z_P);
 }
 
 /**
@@ -175,21 +210,25 @@ __device__ Range ithChunk(int idx, int n, int chunk)
     else return Range{start, (int)fmin((double)(idx * chunk), (double)(n + 1))}; //Make sure no rounding
 }
 
-/**
-* Method to scale a matrix according to the R "scale()" function
-* KEEP IN MIND SCALING IN CPP IS DIFFERENT THAN R
-* @param A Matrix to be scaled
-* @returns The scaled matrix
+/*
+ZtoP <- function(z.score, ...){
+  if(max(z.score)<=37.51929999999999765){
+    return(2*pnorm(-abs(as.numeric(z.score))))
+  }else{
+    warning("There is some Z score value over the system length. After converting, the p-value is recorded as 1e-309.")
+    pvals <- 2*pnorm(-abs(as.numeric(z.score)))
+    pvals[pvals==0] <- 1e-309
+    return(pvals)
+  }
+}
 */
-__device__ Matrix scale(Matrix A){
-    double* ret_elements = (double*)malloc(A.width * A.height);
-    Matrix ret = { A.width, A.height, ret_elements };
-    for (int i = 0; i < A.height; i++) {
-        for (int j = 0; j < A.width; j++) {
-            ret.elements[i * ret.width + j] = (*(A.elements + i * A.width + j) - A.mean()) / A.standard_dev(A.mean());
-        }
+__device__ double ztoP(double zscore) {
+    if (zscore <= 37.51929999999999765) {
+        return 1.0 + erf(-abs(zscore) / sqrt(2.0));
     }
-    return ret;
+    else {
+        return 1e-309;
+    }
 }
 
 /**
@@ -200,35 +239,40 @@ __device__ Matrix scale(Matrix A){
 */
 __device__ Matrix getcor(Matrix A, Matrix B)
 {
+    if (A.height != B.height) {
+        printf("A and B are incompatable in getcor calculation\n");
+        return Matrix{};
+    }
     //Matrix Abar = scale(A);
-    double A_mean = A.mean();
-    double A_stdev = A.standard_dev(A_mean);
-    double B_mean = B.mean();
-    double B_stdev = B.standard_dev(B_mean);
+    double A_mean, A_stdev, B_mean, B_stdev;
 
-    for (int i = 0; i < A.height; i++) {
-        for (int j = 0; j < A.width; j++) {
-            A.elements[i * A.width + j] = (*(A.elements + i * A.width + j) - A_mean) / A_stdev;
+    for (int i = 0; i < A.width; i++) {
+        A_mean = A.mean(i);
+        A_stdev = A.standard_dev(A_mean, i);
+        for (int j = 0; j < A.height; j++) {
+            A.elements[j * A.width + i] = (*(A.elements + j * A.width + i) - A_mean) / A_stdev;
         }
     }
     //TODO issue with code below:
     for (int i = 0; i < A.height; i++) {
         for (int j = 0; j < A.width; j++) {
             A.elements[i * A.width + j] = A.elements[i * A.width + j]
-                                                * -1 * __CUDA_RUNTIME_H__::sqrt((double)(1.0 / (A.height - 1)));
+                                                * sqrt((double)(1.0 / (A.height - 1)));
         }
     }
 
     //Matrix Bbar = scale(B);
-    for (int i = 0; i < B.height; i++) {
-        for (int j = 0; j < B.width; j++) {
-            B.elements[i * B.width + j] = (*(B.elements + i * B.width + j) - B_mean) / B_stdev;
+    for (int i = 0; i < B.width; i++) {
+        B_mean = B.mean(i);
+        B_stdev = B.standard_dev(B_mean, i);
+        for (int j = 0; j < B.height; j++) {
+            B.elements[j * B.width + i] = (*(B.elements + j * B.width + i) - B_mean) / B_stdev;
         }
     }
     for (int i = 0; i < B.height; i++) {
         for (int j = 0; j < B.width; j++) {
             B.elements[i * B.width + j] = *(B.elements + i * B.width + j)
-                                                * -1 * __CUDA_RUNTIME_H__::sqrt((double)(1.0 / (B.height - 1)));
+                                                * sqrt((double)(1.0 / (B.height - 1)));
         }
     }
 
@@ -255,14 +299,17 @@ Multiply them together
                             outfile = OUT)
 
 */
-__global__ void ZTestKernel(int i, 
-                            int* thread_dim,
-                            int* chunksize,
-                            Matrix control_mat, 
-                            Matrix case_mat,
-                            double* zpthres,
-                            double* sd_tot,
-                            int* d_flag) {
+__global__ void ZTestKernel(int i,
+    int* thread_dim,
+    int* chunksize,
+    Matrix control_mat,
+    Matrix case_mat,
+    double* zpthres,
+    double sd_tot,
+    int* d_flag) {
+
+    if(threadIdx.x == 0)
+        printf("------------------Chunk %d started--------------------\n", i);
 
     //Find matrix ranges for analysis based on chunks
     //i = i, j = threadIdx.x
@@ -280,7 +327,7 @@ __global__ void ZTestKernel(int i,
     Matrix B_chunk_case{ j_chunk.calc_dist(), case_mat.height, B_chunk_case_data };
     Matrix A_chunk_control{ i_chunk.calc_dist(), control_mat.height, A_chunk_control_data };
     Matrix B_chunk_control{ j_chunk.calc_dist(), control_mat.height, B_chunk_control_data };
-    
+
     //Writing data to arrays here
     for (int i = 0; i < A_chunk_case.height; i++) {
         for (int j = 0; j < A_chunk_case.width; j++) {
@@ -310,8 +357,11 @@ __global__ void ZTestKernel(int i,
         }
     }
 
-    if(threadIdx.x == 0)
+    if (threadIdx.x == 0) {
         printf("%d bytes allocated in heap memory for this chunk\n", sizeof(double) * A_chunk_case.width * A_chunk_case.height * 4 * 167);
+    }
+
+    __syncthreads();
 
     //Need to fix some part of this method
     Matrix z_test = subtract_matrices(
@@ -325,37 +375,66 @@ __global__ void ZTestKernel(int i,
         )
     );
 
-    if(threadIdx.x == 0)
-        z_test.print_matrix();
+    __syncthreads();
 
-    printf("-----------------------------------\n");
+    //if(threadIdx.x == 0){
+        //z_test.print_matrix();
+        //printf("-----------------------------------\n");
+    //}
 
-    mat_divide(z_test, *sd_tot);
-
-    if (threadIdx.x == 0)
-        z_test.print_matrix();
+    //TODO Error in this line
+    //mat_divide(z_test, *sd_tot);
+    for (int i = 0; i < z_test.height; i++) {
+        for (int j = 0; j < z_test.width; j++) {
+            z_test.elements[i * z_test.width + j]
+                = *(z_test.elements + i * z_test.width + j) / sd_tot;
+        }
+    }
 
     //printf("%d z_test performed\n", threadIdx.x);
+    //if (threadIdx.x == 0)
+    //    z_test.print_matrix();
 
     __syncthreads(); //Not real error
 
-    //Freeing all data
-    delete[] A_chunk_case_data;
-    delete[] B_chunk_case_data;
-    delete[] A_chunk_control_data;
-    delete[] B_chunk_control_data;
+    int entrySuccess = 0;
 
-    printf("Deleted chunk data\n");
-
-    delete[] z_test.elements;
-
-    printf("Deleted ztest data\n");
-
-    __syncthreads(); //Not real error
-
-    if (threadIdx.x == *thread_dim) {
-        *d_flag = 1;
+    //Actual search for interaction here
+    for (int i = 0; i < z_test.height; i++) {
+        for (int j = 0; j < z_test.width; j++) {
+            double d = *(z_test.elements + i * z_test.width + j);
+            if (abs(d) >= *zpthres) {
+                entrySuccess += 1;
+                Entry temp
+                { 
+                    i + i_chunk.min, 
+                    j + j_chunk.min,
+                    d,
+                    ztoP(d)
+                };
+                temp.print_entry();
+            }
+        }
     }
+
+    printf("%.15f\n", (double)entrySuccess / (13564 * 100));
+
+    __syncthreads();
+
+    //Freeing all data - I guess this data does not have to be deleted?
+    //delete[] A_chunk_case.elements;
+    //delete[] B_chunk_case_data;
+    //delete[] A_chunk_control_data;
+    //delete[] B_chunk_control_data;
+
+    //printf("Deleted chunk data\n");
+
+    //delete[] z_test.elements;
+
+    __syncthreads(); //Not real error
+
+    if(threadIdx.x == 0)
+        printf("------------------Chunk %d finished--------------------\n", i);
 
 }
 
@@ -399,6 +478,9 @@ __global__ void EpiScanKernel(Matrix case_mat,
         (1.0 / (double)(control_mat.height - 1)) + (1.0 / (double)(case_mat.height - 1))
     );
 
+    //Check for sd_tot - sd_tot IS GOOD
+    //printf("%.15f\n", sd_tot);
+
     //Check to make sure dims are right - they are
     //printf("%d, %d\n", control_mat.height, case_mat.height);
     //printf("%d, %d\n", control_mat.width, case_mat.width);
@@ -417,28 +499,22 @@ __global__ void EpiScanKernel(Matrix case_mat,
         //printf("%d\n", thread_dim);
         
         //1 Block (maybe increase to increase parallelization)
-        printf("------------------Chunk %d started--------------------\n", i);
         ZTestKernel <<<1,thread_dim>>> (i, 
             &thread_dim, 
             chunksize, 
             control_mat, 
             case_mat, 
             zpthres, 
-            &sd_tot, 
+            sd_tot, 
             d_flag);
-        while (*d_flag != 1) {}
-        *d_flag = 0;
-        printf("------------------Chunk %d finished--------------------\n", i);
     }
     
 
     printf("-----------KERNEL FINISHED-------------\n");
 }
 
-// Matrix multiplication - Host code
-// Matrix dimensions are assumed to be multiples of BLOCK_SIZE************
-cudaError_t EpiScan(const Matrix genotype_data, 
-                    const Matrix phenotype_data, 
+cudaError_t EpiScan(Matrix genotype_data, 
+                    Matrix phenotype_data, 
                     const double zpthres, 
                     const int chunksize) {
     double* d_zpthres;
@@ -472,11 +548,32 @@ cudaError_t EpiScan(const Matrix genotype_data,
         goto Error;
     }
 
-    //Determine the case and control matrices
+    //Determine the case and control matrices BEFORE scaling phenotype_data (easier)
     int control_count = 0, case_count = 0;
     for (int i = 0; i < phenotype_data.height; i++) {
         if (phenotype_data.elements[i] == 0.0) control_count++;
         else case_count++;
+    }
+
+    //Scaling data - different than expected
+    double geno_mean = 0.0, geno_stdev = 0.0, pheno_mean = 0.0, pheno_stdev = 0.0;
+
+    for (int i = 0; i < genotype_data.width; i++) {
+        geno_mean = genotype_data.host_mean(i);
+        geno_stdev = genotype_data.host_standard_dev(geno_mean, i);
+        for (int j = 0; j < genotype_data.height; j++) {
+            genotype_data.elements[j * genotype_data.width + i] 
+                = (*(genotype_data.elements + j * genotype_data.width + i) - geno_mean) / geno_stdev;
+        }
+    }
+
+    for (int i = 0; i < phenotype_data.width; i++) {
+        pheno_mean = phenotype_data.host_mean(i);
+        pheno_stdev = phenotype_data.host_standard_dev(pheno_mean, i);
+        for (int j = 0; j < phenotype_data.height; j++) {
+            phenotype_data.elements[j * phenotype_data.width + i]
+                = (*(phenotype_data.elements + j * phenotype_data.width + i) - pheno_mean) / pheno_stdev;
+        }
     }
 
     Matrix control_mat{ genotype_data.width, control_count, new double[control_count * genotype_data.width] };
@@ -485,7 +582,7 @@ cudaError_t EpiScan(const Matrix genotype_data,
     // M(row, col) = *(M.elements + row * M.width + col)
     control_count = (case_count = 0);
     for (int i = 0; i < phenotype_data.height; i++) {
-        if (phenotype_data.elements[i] == 0.0) {
+        if (phenotype_data.elements[i] <= 0.0) {
             for (int j = 0; j < genotype_data.width; j++) {
                 control_mat.elements[control_count * control_mat.width + j]
                     = genotype_data.elements[i * genotype_data.width + j];
