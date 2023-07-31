@@ -13,6 +13,21 @@
 #ifndef DATA_HEIGHT
     #define DATA_HEIGHT 713
 #endif
+#ifndef TEST_PATH
+    #define TEST_PATH "C:\\Users\\lance\\Desktop\\data\\data\\ALVM_imp_maf20perc_w_Target.csv"
+#endif
+#ifndef OUTPUT_FILE
+    #define OUTPUT_FILE "C:\\Users\\lance\\Desktop\\data\\results\\alvm_results_gpu.txt"
+#endif
+#ifndef ZPTHRES
+    #define ZPTHRES 3//1e-6
+#endif
+#ifndef MAX_LABEL_SIZE
+    #define MAX_LABEL_SIZE 25
+#endif
+#ifndef MAX_COLS
+    #define MAX_COLS 20000
+#endif
 
 /**
 * Struct to hold a range of values
@@ -61,17 +76,15 @@ __global__ void EpiScanKernel(
     int* d_geno_height,
     int* d_geno_width,
     int* d_pheno_height,
-    int* d_pheno_width,
-    int* d_flag);
+    int* d_pheno_width);
 __global__ void ZTestKernel(
     int i,
-    int* block_dim,
+    int* thread_dim,
     int* chunksize,
     Matrix control_mat,
     Matrix case_mat,
     double* zpthres,
-    double sd_tot,
-    int* d_flag);
+    double sd_tot);
 __device__ Matrix subtract_matrices(const Matrix& first, const Matrix& other);
 __device__ Matrix transpose(Matrix A);
 __device__ Matrix cross_product(Matrix A, Matrix B);

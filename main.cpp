@@ -9,19 +9,8 @@
 #include <stdio.h>
 #include <vector>
 #include <sstream>
-
-#ifndef TEST_PATH
-    #define TEST_PATH "C:\\Users\\lance\\Desktop\\data\\data\\ALVM_imp_maf20perc_w_Target.csv"
-#endif
-#ifndef ZPTHRES
-    #define ZPTHRES 3//1e-6
-#endif
-#ifndef MAX_LABEL_SIZE
-    #define MAX_LABEL_SIZE 25
-#endif
-#ifndef MAX_COLS
-    #define MAX_COLS 20000
-#endif
+#include "io.h" // dup
+#include <sstream> // stringstream
 
 /**
 * Utility method for CSV line parsing
@@ -144,8 +133,6 @@ int main(int argc, char* argv[])
         printf("%s, ", std::string(feature_labels[i]).c_str());
     }
     */
-
-    //TODO DEAL WITH CREATING OUTFILE - I DO NOT FEEL LIKE DOING THIS RIGHT NOW
 
     printf("Write executed properly, executing Kernel. . .\n");
 

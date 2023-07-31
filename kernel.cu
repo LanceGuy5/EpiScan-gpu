@@ -11,6 +11,12 @@
 #include "kernel.cuh"
 
 #include <algorithm>
+#include <fstream>
+#ifdef _WIN32
+    #include <windows.h>
+#elif __linux__
+    //Add linux imports here
+#endif
 
 //Constant variables
 __constant__ int n_SNP;
@@ -305,11 +311,10 @@ __global__ void ZTestKernel(int i,
     Matrix control_mat,
     Matrix case_mat,
     double* zpthres,
-    double sd_tot,
-    int* d_flag) {
+    double sd_tot) {
 
-    if(threadIdx.x == 0)
-        printf("------------------Chunk %d started--------------------\n", i);
+    //if(threadIdx.x == 0)
+    //    printf("------------------Chunk %d started--------------------\n", i);
 
     //Find matrix ranges for analysis based on chunks
     //i = i, j = threadIdx.x
@@ -357,9 +362,9 @@ __global__ void ZTestKernel(int i,
         }
     }
 
-    if (threadIdx.x == 0) {
-        printf("%d bytes allocated in heap memory for this chunk\n", sizeof(double) * A_chunk_case.width * A_chunk_case.height * 4 * 167);
-    }
+    //if (threadIdx.x == 0) {
+    //    printf("%d bytes allocated in heap memory for this chunk\n", sizeof(double) * A_chunk_case.width * A_chunk_case.height * 4 * 167);
+    //}
 
     __syncthreads();
 
@@ -417,7 +422,7 @@ __global__ void ZTestKernel(int i,
         }
     }
 
-    printf("%.15f\n", (double)entrySuccess / (13564 * 100));
+    //printf("%.15f\n", (double)entrySuccess / (13564 * 100));
 
     __syncthreads();
 
@@ -431,10 +436,10 @@ __global__ void ZTestKernel(int i,
 
     //delete[] z_test.elements;
 
-    __syncthreads(); //Not real error
+    //__syncthreads(); //Not real error
 
-    if(threadIdx.x == 0)
-        printf("------------------Chunk %d finished--------------------\n", i);
+    //if(threadIdx.x == 0)
+    //    printf("------------------Chunk %d finished--------------------\n", i);
 
 }
 
@@ -457,9 +462,8 @@ __global__ void EpiScanKernel(Matrix case_mat,
                               int* geno_height,
                               int* geno_width,
                               int* pheno_height,
-                              int* pheno_width,
-                              int* d_flag) {
-    printf("-----------KERNEL ACTIVATED-------------\n");
+                              int* pheno_width) {
+    //printf("-----------KERNEL ACTIVATED-------------\n");
     
     //Check to make sure same number of cases for genotype and phenotype
     if (*geno_height != *pheno_height) {
@@ -472,7 +476,7 @@ __global__ void EpiScanKernel(Matrix case_mat,
     
     int n_splits = (int)ceilf((float)n_SNP / (float)*chunksize);
 
-    printf("Preparing %d chunk loops...\n", n_splits);
+    //printf("Preparing %d chunk loops...\n", n_splits);
 
     double sd_tot = __CUDA_RUNTIME_H__::sqrt(
         (1.0 / (double)(control_mat.height - 1)) + (1.0 / (double)(case_mat.height - 1))
@@ -505,12 +509,10 @@ __global__ void EpiScanKernel(Matrix case_mat,
             control_mat, 
             case_mat, 
             zpthres, 
-            sd_tot, 
-            d_flag);
+            sd_tot);
     }
-    
 
-    printf("-----------KERNEL FINISHED-------------\n");
+    //printf("-----------KERNEL FINISHED-------------\n");
 }
 
 cudaError_t EpiScan(Matrix genotype_data, 
@@ -523,7 +525,6 @@ cudaError_t EpiScan(Matrix genotype_data,
     int* d_pheno_height;
     int* d_pheno_width;
     int* d_chunksize;
-    int* d_flag;
 
     cudaError_t cudaStatus;
 
@@ -536,16 +537,59 @@ cudaError_t EpiScan(Matrix genotype_data,
         goto Error;
     }
 
-    printf("Start data allocation/movement\n");
-
     //Setting size of the heap
-    size_t heapSizeInBytes = 3000000000; //This is a guestimate
+    size_t heapSizeInBytes = 3000000000; //This is a *guestimate*
 
     // Set the heap size limit
     cudaStatus = cudaDeviceSetLimit(cudaLimitMallocHeapSize, heapSizeInBytes);
     if (cudaStatus != cudaSuccess) {
         fprintf(stderr, "cudaDeviceSetLimit failed! Error: %s\n", cudaGetErrorString(cudaStatus));
         goto Error;
+    }
+
+    size_t freeMemory, totalMemory;
+    cudaStatus = cudaMemGetInfo(&freeMemory, &totalMemory);
+    if (cudaStatus != cudaSuccess) {
+        fprintf(stderr, "cudaMemGetInfo failed! %s\n", cudaGetErrorString(cudaStatus));
+        goto Error;
+    }
+
+    printf("Total GPU Memory: %zu bytes\n", totalMemory);
+    printf("Free GPU Memory: %zu bytes\n", freeMemory);
+
+    printf("Redefining output stream - output during kernels can be found in outfile\n");
+
+    /*
+    #ifdef _WIN32
+    printf("_WIN32 TRUE\n");
+        //Store old handle - USES WINDOWS
+        HANDLE hOut = GetStdHandle(STD_OUTPUT_HANDLE);
+
+        HANDLE hFile = CreateFileA(TEXT(OUTPUT_FILE), 
+            GENERIC_WRITE, 
+            FILE_READ_ACCESS | FILE_WRITE_ACCESS,
+            NULL, 
+            CREATE_ALWAYS, 
+            FILE_ATTRIBUTE_NORMAL, 
+            NULL);
+        SetStdHandle(STD_OUTPUT_HANDLE, hFile);
+        cudaFree(0);
+    #elif __linux__
+        //Add linux imports here
+        //TODO Include Linux functionality
+        //I believe that it works similarly under Linux(probably by using the two - argument dup2 to 
+        //redirect stdout).
+    #endif
+    */
+
+    FILE* outputFile = freopen(OUTPUT_FILE, "w", stdout);
+    if (outputFile == nullptr) {
+        printf("Error opening file!\n");
+        goto Error;
+    }
+    else {
+        cudaFree(0);
+        printf("SNP1  SNP2  Zscore  ZP\n");
     }
 
     //Determine the case and control matrices BEFORE scaling phenotype_data (easier)
@@ -710,25 +754,6 @@ cudaError_t EpiScan(Matrix genotype_data,
         goto Error;
     }
 
-    //Load d_flag to memory device
-    cudaStatus = cudaMalloc((void**)&d_flag, sizeof(int));
-    if (cudaStatus != cudaSuccess) {
-        printf("d_pheno_width cudaMalloc failed!");
-        goto Error;
-    }
-
-    printf("Memory Allocated!\n");
-
-    size_t freeMemory, totalMemory;
-    cudaStatus = cudaMemGetInfo(&freeMemory, &totalMemory);
-    if (cudaStatus != cudaSuccess) {
-        fprintf(stderr, "cudaMemGetInfo failed! %s\n", cudaGetErrorString(cudaStatus));
-        goto Error;
-    }
-
-    printf("Total GPU Memory: %zu bytes\n", totalMemory);
-    printf("Free GPU Memory: %zu bytes\n", freeMemory);
-
     // Invoke kernel
     //Only need 1 thread and 1 block because I will be parallelizing the rest within this kernel
     EpiScanKernel <<<1,1>>> (d_case, 
@@ -738,8 +763,7 @@ cudaError_t EpiScan(Matrix genotype_data,
                              d_geno_height, 
                              d_geno_width, 
                              d_pheno_height, 
-                             d_pheno_width, 
-                             d_flag);
+                             d_pheno_width);
     cudaDeviceSynchronize();
 
     // Check for any errors launching the kernel
@@ -757,7 +781,19 @@ cudaError_t EpiScan(Matrix genotype_data,
     cudaFree(d_pheno_height);
     cudaFree(d_pheno_width);
     cudaFree(d_chunksize);
-    cudaFree(d_flag);
+
+    //Fix handle
+    /*
+    #ifdef _WIN32
+        SetStdHandle(STD_OUTPUT_HANDLE, hOut);
+        CloseHandle(hFile);
+    #elif __linux__
+        //Add linux imports here
+    #endif
+    */
+    fflush(stdout);
+    freopen("CON", "w", stdout);
+    printf("Output stream fixed - back to here.\n");
 
 Error:
     cudaFree(&d_case);
@@ -768,7 +804,18 @@ Error:
     cudaFree(d_pheno_height);
     cudaFree(d_pheno_width);
     cudaFree(d_chunksize);
-    cudaFree(d_flag);
+
+    //Fix handle
+    /*
+    #ifdef _WIN32
+        SetStdHandle(STD_OUTPUT_HANDLE, hOut);
+        CloseHandle(hFile);
+    #elif __linux__
+        //Add linux imports here
+    #endif
+    */
+    fflush(stdout);
+    freopen("CON", "w", stdout);
 
     return cudaStatus;
 }
