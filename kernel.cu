@@ -590,6 +590,7 @@ cudaError_t EpiScan(Matrix genotype_data,
     else {
         cudaFree(0);
         printf("SNP1  SNP2  Zscore  ZP\n");
+        fflush(stdout);
     }
 
     //Determine the case and control matrices BEFORE scaling phenotype_data (easier)
