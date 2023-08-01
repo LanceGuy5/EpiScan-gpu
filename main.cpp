@@ -61,6 +61,8 @@ std::vector<std::vector<std::string>> readCSV(const std::string& filename) {
 */
 int main(int argc, char* argv[])
 {
+    time_t start, end;
+    time(&start);
     //All required variables
     /*
         geno1,
@@ -159,8 +161,13 @@ int main(int argc, char* argv[])
     cudaStatus = cudaDeviceReset();
     if (cudaStatus != cudaSuccess) {
         fprintf(stderr, "cudaDeviceReset failed!");
+        time(&end);
+        printf("Total time elapsed: %f\n", (double)(end - start));
         return 1;
     }
+
+    time(&end);
+    printf("Total time elapsed: %f\n", (double)(end - start));
 
     return 0;
 }
