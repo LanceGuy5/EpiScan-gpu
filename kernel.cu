@@ -382,7 +382,7 @@ __global__ void ZTestKernel(int i,
         getcor(A_chunk_control, B_chunk_control)
     );
 
-    if (threadIdx.x == 0) z_test.print_matrix();
+    //if (threadIdx.x == 0) z_test.print_matrix();
 
     //printf("%d: z_test finished\n", threadIdx.x);
 
@@ -594,7 +594,6 @@ __host__ cudaError_t EpiScan(Matrix genotype_data,
 
     printf("Redefining output stream - output during kernels can be found in outfile\n");
 
-    /*
     FILE* outputFile = freopen(TEMP_FILE, "w", stdout);
     if (outputFile == nullptr) {
         printf("Error opening file!\n");
@@ -607,7 +606,6 @@ __host__ cudaError_t EpiScan(Matrix genotype_data,
         }
         cudaFree(0);
     }
-    */
 
     //Determine the case and control matrices BEFORE scaling phenotype_data (easier)
     int control_count = 0, case_count = 0;
