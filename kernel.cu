@@ -7,6 +7,7 @@
 #include "cuda_runtime.h"
 #include "device_launch_parameters.h"
 #include "math.h"
+#include <cmath>
 
 #include "kernel.cuh"
 
@@ -16,6 +17,9 @@
     #include <windows.h>
 #elif __linux__
     //Add linux imports here
+#endif
+#ifndef PI
+    #define PI 3.14159265358979323846
 #endif
 
 //Constant variables
@@ -105,7 +109,7 @@ __device__ void Range::print_range() {
 }
 
 __device__ void Entry::print_entry() {
-    printf("%d, %d, %.15f, %.15f\n", id_one, id_two, z_score, z_P);
+    printf("%d, %d, %.15f, %.15f \n", id_one, id_two, z_score, z_P);
 }
 
 /**
@@ -114,7 +118,7 @@ __device__ void Entry::print_entry() {
 * @param other Matrix being subtracted onto the first matrix
 * @returns First matrix - Second matrix
 */
-__device__ Matrix subtract_matrices(const Matrix& first, const Matrix& other) {
+__device__ Matrix subtract_matrices(Matrix first, Matrix other) {
     if (first.width != other.width || first.height != other.height) {
         printf("Error: cannot subtract matrixes with different sizes");
         return Matrix{};
@@ -139,6 +143,7 @@ __device__ Matrix transpose(Matrix A)
 {
     //double* ret_elements = new double[sizeof(A.elements) / sizeof(A.elements[0])];
     double* ret_elements = new double[A.height * A.width];
+    if (ret_elements == nullptr) printf("%d c_elements never made\n", threadIdx.x);
     Matrix ret{ A.height, A.width, ret_elements };
     for (int i = 0; i < A.height; i++) {
         for (int j = 0; j < A.width; j++) {
@@ -171,6 +176,8 @@ __device__ Matrix cross_product(Matrix A, Matrix B)
     //double* C_elements = new double[a_transposed.height * B.width];
     double* C_elements = new double[a_transposed.height * B.width];
 
+    if (C_elements == nullptr) printf("%d c_elements never made\n", threadIdx.x);
+
     Matrix C { a_transposed.height, B.width, C_elements };
 
     //First for loop -> per a_transposed row
@@ -186,7 +193,7 @@ __device__ Matrix cross_product(Matrix A, Matrix B)
                 ret_element += a_transposed.elements[k * a_transposed.width + j] * B.elements[j * B.width + i];
             }
             C.elements[k * C.width + i] = ret_element;
-        }
+         }
     }
     delete[] a_transposed.elements;
     delete[] B.elements;
@@ -213,7 +220,7 @@ __device__ Range ithChunk(int idx, int n, int chunk)
 {
     int start = (idx - 1) * chunk;
     if (idx < 1 || start > n) return Range{0,0}; // Should not happen!
-    else return Range{start, (int)fmin((double)(idx * chunk), (double)(n + 1))}; //Make sure no rounding
+    else return Range{start, (int)fmin((double)(idx * chunk), (double)(n + 1)) - 1}; //Make sure no rounding
 }
 
 /*
@@ -306,7 +313,6 @@ Multiply them together
 
 */
 __global__ void ZTestKernel(int i,
-    int* thread_dim,
     int* chunksize,
     Matrix control_mat,
     Matrix case_mat,
@@ -320,12 +326,15 @@ __global__ void ZTestKernel(int i,
     //i = i, j = threadIdx.x
 
     Range i_chunk = ithChunk(i, n_SNP, *chunksize);
-    Range j_chunk = ithChunk((int)threadIdx.x + 1, n_SNP, *chunksize);
+    Range j_chunk = ithChunk(threadIdx.x + i, n_SNP, *chunksize);
 
     double* A_chunk_case_data = new double[i_chunk.calc_dist() * case_mat.height];
     double* B_chunk_case_data = new double[j_chunk.calc_dist() * case_mat.height];
     double* A_chunk_control_data = new double[i_chunk.calc_dist() * control_mat.height];
     double* B_chunk_control_data = new double[j_chunk.calc_dist() * control_mat.height];
+
+    if (A_chunk_case_data == nullptr || B_chunk_case_data == nullptr || A_chunk_control_data == nullptr || B_chunk_control_data == nullptr)
+        printf("Something went wrong with the data initialization.");
 
     //Feed allocated arrays into matrix variables for ease of access
     Matrix A_chunk_case{ i_chunk.calc_dist(), case_mat.height, A_chunk_case_data };
@@ -334,31 +343,31 @@ __global__ void ZTestKernel(int i,
     Matrix B_chunk_control{ j_chunk.calc_dist(), control_mat.height, B_chunk_control_data };
 
     //Writing data to arrays here
-    for (int i = 0; i < A_chunk_case.height; i++) {
+    for (int k = 0; k < A_chunk_case.height; k++) {
         for (int j = 0; j < A_chunk_case.width; j++) {
-            A_chunk_case.elements[i * A_chunk_case.width + j]
-                = case_mat.elements[i * A_chunk_case.width + j + i_chunk.min];
+            A_chunk_case.elements[k * A_chunk_case.width + j]
+                = case_mat.elements[k * A_chunk_case.width + j + i_chunk.min];
         }
     }
 
-    for (int i = 0; i < B_chunk_case.height; i++) {
+    for (int k = 0; k < B_chunk_case.height; k++) {
         for (int j = 0; j < B_chunk_case.width; j++) {
-            B_chunk_case.elements[i * B_chunk_case.width + j]
-                = case_mat.elements[i * B_chunk_case.width + j + j_chunk.min];
+            B_chunk_case.elements[k * B_chunk_case.width + j]
+                = case_mat.elements[k * B_chunk_case.width + j + j_chunk.min];
         }
     }
 
-    for (int i = 0; i < A_chunk_control.height; i++) {
+    for (int k = 0; k < A_chunk_control.height; k++) {
         for (int j = 0; j < A_chunk_control.width; j++) {
-            A_chunk_control.elements[i * A_chunk_control.width + j]
-                = case_mat.elements[i * A_chunk_control.width + j + i_chunk.min];
+            A_chunk_control.elements[k * A_chunk_control.width + j]
+                = case_mat.elements[k * A_chunk_control.width + j + i_chunk.min];
         }
     }
 
-    for (int i = 0; i < B_chunk_control.height; i++) {
+    for (int k = 0; k < B_chunk_control.height; k++) {
         for (int j = 0; j < B_chunk_control.width; j++) {
-            B_chunk_control.elements[i * B_chunk_control.width + j]
-                = case_mat.elements[i * B_chunk_control.width + j + j_chunk.min];
+            B_chunk_control.elements[k * B_chunk_control.width + j]
+                = case_mat.elements[k * B_chunk_control.width + j + j_chunk.min];
         }
     }
 
@@ -367,52 +376,51 @@ __global__ void ZTestKernel(int i,
     //}
 
     __syncthreads();
-
     //Need to fix some part of this method
     Matrix z_test = subtract_matrices(
-        getcor(
-            A_chunk_case,
-            B_chunk_case
-        ),
-        getcor(
-            A_chunk_control,
-            B_chunk_control
-        )
+        getcor(A_chunk_case, B_chunk_case), 
+        getcor(A_chunk_control, B_chunk_control)
     );
 
-    __syncthreads();
+    if (threadIdx.x == 0) z_test.print_matrix();
 
-    //if(threadIdx.x == 0){
-        //z_test.print_matrix();
-        //printf("-----------------------------------\n");
-    //}
+    //printf("%d: z_test finished\n", threadIdx.x);
 
-    //TODO Error in this line
-    //mat_divide(z_test, *sd_tot);
-    for (int i = 0; i < z_test.height; i++) {
+    for (int k = 0; k < z_test.height; k++) {
         for (int j = 0; j < z_test.width; j++) {
-            z_test.elements[i * z_test.width + j]
-                = *(z_test.elements + i * z_test.width + j) / sd_tot;
+            z_test.elements[k * z_test.width + j] /= sd_tot;
         }
     }
+
+    //printf("%d: z_test actually finished\n", threadIdx.x);
+
+    //printf("%d ztest complete\n", threadIdx);
+    //if (threadIdx.x == 0) {
+        //z_test.print_matrix();
+        //printf("1: -----------------------------------\n");
+    //}
+
+    //if (threadIdx.x == 0) {
+        //z_test.print_matrix();
+        //printf("2: -----------------------------------\n");
+    //}
 
     //printf("%d z_test performed\n", threadIdx.x);
     //if (threadIdx.x == 0)
     //    z_test.print_matrix();
 
     __syncthreads(); //Not real error
-
     int entrySuccess = 0;
 
     //Actual search for interaction here
-    for (int i = 0; i < z_test.height; i++) {
+    for (int k = 0; k < z_test.height; k++) {
         for (int j = 0; j < z_test.width; j++) {
             double d = *(z_test.elements + i * z_test.width + j);
             if (abs(d) >= *zpthres) {
                 entrySuccess += 1;
                 Entry temp
                 { 
-                    i + i_chunk.min, 
+                    k + i_chunk.min, 
                     j + j_chunk.min,
                     d,
                     ztoP(d)
@@ -422,21 +430,11 @@ __global__ void ZTestKernel(int i,
         }
     }
 
-    //printf("%.15f\n", (double)entrySuccess / (13564 * 100));
-
-    __syncthreads();
-
-    //Freeing all data - I guess this data does not have to be deleted?
-    //delete[] A_chunk_case.elements;
-    //delete[] B_chunk_case_data;
-    //delete[] A_chunk_control_data;
-    //delete[] B_chunk_control_data;
-
     //printf("Deleted chunk data\n");
 
-    //delete[] z_test.elements;
+    delete[] z_test.elements;
 
-    //__syncthreads(); //Not real error
+    __syncthreads(); //Not real error
 
     //if(threadIdx.x == 0)
     //    printf("------------------Chunk %d finished--------------------\n", i);
@@ -493,7 +491,7 @@ __global__ void EpiScanKernel(Matrix case_mat,
     //Chunk calculation starts at 1
     for (int i = 1; i <= n_splits; i++) {
         Range curr_range = { i, n_splits };
-        int thread_dim = (curr_range.max - curr_range.min) + 1;
+        int thread_dim = (curr_range.max - curr_range.min);// +1; //Get rid of +1 in order to run with fixed way?
         //TODO MAKE MORE SCALABLE THAN USER REQUIREMENT
         if (thread_dim > 1024) {
             printf("Thread dim %d is greater than 1024, increase chunk size!", thread_dim);
@@ -504,7 +502,6 @@ __global__ void EpiScanKernel(Matrix case_mat,
         
         //1 Block (maybe increase to increase parallelization)
         ZTestKernel <<<1,thread_dim>>> (i, 
-            &thread_dim, 
             chunksize, 
             control_mat, 
             case_mat, 
@@ -515,9 +512,28 @@ __global__ void EpiScanKernel(Matrix case_mat,
     //printf("-----------KERNEL FINISHED-------------\n");
 }
 
-cudaError_t EpiScan(Matrix genotype_data, 
+__host__ double qnorm(double p, double mean, double sd, bool lower_tail) {
+    // Check for invalid inputs
+    if (p <= 0 || p >= 1) {
+        printf("Error: Probability must be between 0 and 1 (exclusive).\n");
+        return NAN; // Return NaN for invalid inputs
+    }
+
+    // Calculate quantile for standard normal distribution (mean = 0, sd = 1)
+    double z;
+    if (lower_tail) {
+        z = -std::sqrt(2.0) * erfcinv(2 * p); // fake error :(
+    }
+    else {
+        z = std::sqrt(2.0) * erfcinv(2 * (1 - p));
+    }
+
+    return (double)(mean + z * sd);
+}
+
+__host__ cudaError_t EpiScan(Matrix genotype_data, 
                     Matrix phenotype_data, 
-                    const double zpthres, 
+                    const double zthres, 
                     const int chunksize) {
     double* d_zpthres;
     int* d_geno_height;
@@ -537,8 +553,13 @@ cudaError_t EpiScan(Matrix genotype_data,
         goto Error;
     }
 
+    printf("Refactoring zpthres\n");
+    double zpthres = std::abs(qnorm(zthres, 0.0, 1.0, true));
+    printf("%.15f\n", zpthres);
+
     //Setting size of the heap
     size_t heapSizeInBytes = 3000000000; //This is a *guestimate*
+    size_t threadPrintFLimit = 1048576 * 3;
 
     // Set the heap size limit
     cudaStatus = cudaDeviceSetLimit(cudaLimitMallocHeapSize, heapSizeInBytes);
@@ -547,7 +568,13 @@ cudaError_t EpiScan(Matrix genotype_data,
         goto Error;
     }
 
-    size_t freeMemory, totalMemory;
+    cudaStatus = cudaThreadSetLimit(cudaLimitPrintfFifoSize, threadPrintFLimit);
+    if (cudaStatus != cudaSuccess) {
+        fprintf(stderr, "cudaThreadSetLimit failed! Error: %s\n", cudaGetErrorString(cudaStatus));
+        goto Error;
+    }
+
+    size_t freeMemory, totalMemory, printBufferSize;
     cudaStatus = cudaMemGetInfo(&freeMemory, &totalMemory);
     if (cudaStatus != cudaSuccess) {
         fprintf(stderr, "cudaMemGetInfo failed! %s\n", cudaGetErrorString(cudaStatus));
@@ -557,41 +584,30 @@ cudaError_t EpiScan(Matrix genotype_data,
     printf("Total GPU Memory: %zu bytes\n", totalMemory);
     printf("Free GPU Memory: %zu bytes\n", freeMemory);
 
+    cudaStatus = cudaDeviceGetLimit(&printBufferSize, cudaLimitPrintfFifoSize);
+    if (cudaStatus != cudaSuccess) {
+        fprintf(stderr, "cudaPrintBufferSize failed! %s\n", cudaGetErrorString(cudaStatus));
+        goto Error;
+    }
+
+    printf("printf buffer size: %zu bytes\n", printBufferSize);
+
     printf("Redefining output stream - output during kernels can be found in outfile\n");
 
     /*
-    #ifdef _WIN32
-    printf("_WIN32 TRUE\n");
-        //Store old handle - USES WINDOWS
-        HANDLE hOut = GetStdHandle(STD_OUTPUT_HANDLE);
-
-        HANDLE hFile = CreateFileA(TEXT(OUTPUT_FILE), 
-            GENERIC_WRITE, 
-            FILE_READ_ACCESS | FILE_WRITE_ACCESS,
-            NULL, 
-            CREATE_ALWAYS, 
-            FILE_ATTRIBUTE_NORMAL, 
-            NULL);
-        SetStdHandle(STD_OUTPUT_HANDLE, hFile);
-        cudaFree(0);
-    #elif __linux__
-        //Add linux imports here
-        //TODO Include Linux functionality
-        //I believe that it works similarly under Linux(probably by using the two - argument dup2 to 
-        //redirect stdout).
-    #endif
-    */
-
-    FILE* outputFile = freopen(OUTPUT_FILE, "w", stdout);
+    FILE* outputFile = freopen(TEMP_FILE, "w", stdout);
     if (outputFile == nullptr) {
         printf("Error opening file!\n");
         goto Error;
     }
     else {
+        if (setvbuf(stdout, nullptr, _IONBF, 0) != 0) {
+            printf("Error setting unbuffered mode for stdout!\n");
+            goto Error;
+        }
         cudaFree(0);
-        printf("SNP1  SNP2  Zscore  ZP\n");
-        fflush(stdout);
     }
+    */
 
     //Determine the case and control matrices BEFORE scaling phenotype_data (easier)
     int control_count = 0, case_count = 0;

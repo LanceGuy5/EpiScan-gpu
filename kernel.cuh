@@ -16,11 +16,14 @@
 #ifndef TEST_PATH
     #define TEST_PATH "C:\\Users\\lance\\Desktop\\data\\data\\ALVM_imp_maf20perc_w_Target.csv"
 #endif
+#ifndef TEMP_FILE
+    #define TEMP_FILE "C:\\Users\\lance\\Desktop\\data\\results\\alvm_results_temp.txt"
+#endif
 #ifndef OUTPUT_FILE
     #define OUTPUT_FILE "C:\\Users\\lance\\Desktop\\data\\results\\alvm_results_gpu.txt"
 #endif
 #ifndef ZPTHRES
-    #define ZPTHRES 3//1e-6
+    #define ZPTHRES 0.01//3//1e-6 - If the threshold is low enough, it can't write to the file fast enough
 #endif
 #ifndef MAX_LABEL_SIZE
     #define MAX_LABEL_SIZE 25
@@ -79,17 +82,17 @@ __global__ void EpiScanKernel(
     int* d_pheno_width);
 __global__ void ZTestKernel(
     int i,
-    int* thread_dim,
     int* chunksize,
     Matrix control_mat,
     Matrix case_mat,
     double* zpthres,
     double sd_tot);
-__device__ Matrix subtract_matrices(const Matrix& first, const Matrix& other);
+__device__ Matrix subtract_matrices(Matrix first, Matrix other);
 __device__ Matrix transpose(Matrix A);
 __device__ Matrix cross_product(Matrix A, Matrix B);
 __device__ Range ithChunk(int idx, int n, int chunk);
 __device__ Matrix getcor(Matrix A, Matrix B);
 __device__ double ztoP(double zscore);
 
-cudaError_t EpiScan(const Matrix A, const Matrix B, double zpthres, int chunksize);
+__host__ cudaError_t EpiScan(const Matrix A, const Matrix B, double zthres, int chunksize);
+__host__ double qnorm(double p, double mean, double sd, bool lower_tail);

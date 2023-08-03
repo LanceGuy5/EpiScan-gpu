@@ -146,6 +146,56 @@ int main(int argc, char* argv[])
                                      ZPTHRES, 
                                      CHUNK_SIZE);
 
+    //Go through file and refactor each line
+    std::ofstream output_file(OUTPUT_FILE);
+    std::ifstream temp_file(TEMP_FILE);
+    if (!output_file || !temp_file) {
+        printf("Failure to read files for refactoring.\n");
+    }
+
+    printf("Reading temp file\n");
+    std::string curr_line;
+    std::vector<std::vector<std::string>> modified;
+    while (std::getline(temp_file, curr_line)) {
+        std::string segment;
+        std::vector<std::string> seglist;
+        for (int i = 0; i < curr_line.length(); i++) {
+            if (curr_line.at(i) == ' ' || curr_line.at(i) =='\n') {
+                seglist.push_back(segment);
+                segment = "";
+            } else {
+                segment += curr_line.at(i);
+            }
+        }
+        modified.push_back(seglist);
+    }
+
+    temp_file.close();
+    std::remove(TEMP_FILE); //TODO UNCOMMENT
+
+    //First line is a header***
+    for (int i = 0; i < modified.size(); i++) {
+        //Only first two elements should be converted to string
+        for (int j = 0; j < 2; j++) {
+            modified.at(i).at(j) = std::string(feature_labels[std::stoi(modified.at(i).at(j))]);
+        }
+    }
+    
+    printf("Writing to output_file\n");
+    output_file << "SNP1  SNP2  Zscore  ZP\n";
+    for (int i = 0; i < modified.size(); i++) {
+        std::string current = "";
+        for (int j = 0; j < modified.at(i).size(); j++) {
+            if (j != modified.at(i).size() - 1)
+                current += modified.at(i).at(j) + "  ";
+            else
+                current += modified.at(i).at(j); //TODO Check if I need the newline
+        }
+        output_file << current + '\n';
+    }
+
+    output_file.close();
+
     //Ok so the reason I never pass the feature_labels array into CUDA memory -> data transfer isn't necessary
     // and it would be stored in unified memory (char related memory management) which I do not want. Rather, 
     // I just deal with it when I am writing to my file on the CPU side and hope things work out.
