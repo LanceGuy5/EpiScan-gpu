@@ -79,6 +79,7 @@
     </CudaCompile>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <CudaCompile Include="epiblaster.cu" />
     <CudaCompile Include="kernel.cu" />
   </ItemGroup>
   <ItemGroup>
@@ -89,6 +90,7 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="csv.h" />
+    <ClInclude Include="epiblaster.cuh" />
     <ClInclude Include="kernel.cuh" />
   </ItemGroup>
   <ItemGroup>

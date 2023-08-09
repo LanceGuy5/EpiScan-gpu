@@ -1,5 +1,6 @@
 
-#include "kernel.cuh"
+//#include "kernel.cuh"
+#include "epiblaster.cuh"
 #include "csv.h"
 
 #include <fstream>
