@@ -510,20 +510,18 @@ __host__ void individual_thread(int i, int j, int chunksize, Matrix& control_mat
 
     cudaStreamSynchronize(currStream);
 
-    printf("KERNEL CALL\n");
-
     ZTestKernel <<<1, 1, 0, currStream>>> (
-        &i,
-        &i_chunk,
-        &j_chunk,
-        &chunksize,
-        &d_A_case,
-        &d_B_case,
-        &d_A_control,
-        &d_B_control,
-        &d_entries,
-        &zpthres,
-        &sd_tot
+        i,
+        i_chunk,
+        j_chunk,
+        chunksize,
+        d_A_case,
+        d_B_case,
+        d_A_control,
+        d_B_control,
+        d_entries,
+        zpthres,
+        sd_tot
     );
 
     cudaMemcpyAsync(entries, d_entries, sizeof(Entry) * CHUNK_SIZE * CHUNK_SIZE,
