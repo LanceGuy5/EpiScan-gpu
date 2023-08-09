@@ -421,7 +421,7 @@ __global__ void ZTestKernel(int i,
     //Actual search for interaction here
     for (int k = 0; k < z_test.height; k++) {
         for (int j = 0; j < z_test.width; j++) {
-            double d = *(z_test.elements + i * z_test.width + j);
+            double d = *(z_test.elements + k * z_test.width + j);
             if (abs(d) >= *zpthres) {
                 entrySuccess += 1;
                 Entry temp

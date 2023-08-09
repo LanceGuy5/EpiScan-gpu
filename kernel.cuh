@@ -8,7 +8,7 @@
     #define MAX_HEADER_LENGTH 25
 #endif
 #ifndef CHUNK_SZE
-    #define CHUNK_SIZE 200
+    #define CHUNK_SIZE 100
 #endif
 #ifndef DATA_HEIGHT
     #define DATA_HEIGHT 713
