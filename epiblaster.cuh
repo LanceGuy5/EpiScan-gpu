@@ -75,17 +75,17 @@ typedef struct Entry {
 } Entry;
 
 __global__ void ZTestKernel(
-    int i,
-    Range i_chunk,
-    Range j_chunk,
-    int chunksize,
-    Matrix d_A_case,
-    Matrix d_B_case,
-    Matrix d_A_control,
-    Matrix d_B_control,
-    Entry** d_entries,
-    double zpthres,
-    double sd_tot);
+    int* i,
+    Range* i_chunk,
+    Range* j_chunk,
+    int* chunksize,
+    Matrix* d_A_case,
+    Matrix* d_B_case,
+    Matrix* d_A_control,
+    Matrix* d_B_control,
+    Entry*** d_entries,
+    double* zpthres,
+    double* sd_tot);
 
 __device__ Matrix subtract_matrices(Matrix first, Matrix other);
 __device__ Matrix transpose(Matrix A);
@@ -96,4 +96,13 @@ __device__ double ztoP(double zscore);
 __host__ cudaError_t EpiScan(const Matrix A, const Matrix B, double zthres, int chunksize);
 __host__ double qnorm(double p, double mean, double sd, bool lower_tail);
 __host__ Range ithChunk(int idx, int n, int chunk);
-__host__ void individual_thread(int i, int j, int chunksize, Matrix& control_mat, Matrix& case_mat, double zpthres, double sd_tot, int n_SNP);
+__host__ void individual_thread(
+    int i, 
+    int j, 
+    int chunksize, 
+    Matrix& control_mat, 
+    Matrix& case_mat, 
+    double zpthres, 
+    double sd_tot, 
+    int n_SNP, 
+    cudaStream_t& currStream);

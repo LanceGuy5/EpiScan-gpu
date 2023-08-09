@@ -186,7 +186,6 @@ __device__ Matrix cross_product(Matrix A, Matrix B)
         return Matrix{};
     }
 
-    //double* C_elements = new double[a_transposed.height * B.width];
     double* C_elements = new double[a_transposed.height * B.width];
 
     if (C_elements == nullptr) {
@@ -314,23 +313,24 @@ __device__ Matrix getcor(Matrix A, Matrix B)
 
 
 __global__ void ZTestKernel(
-    int i,
-    Range i_chunk,
-    Range j_chunk,
-    int chunksize,
-    Matrix d_A_case,
-    Matrix d_B_case,
-    Matrix d_A_control,
-    Matrix d_B_control,
-    Entry** d_entries,
-    double zpthres,
-    double sd_tot) {
+    int* i,
+    Range* i_chunk,
+    Range* j_chunk,
+    int* chunksize,
+    Matrix* d_A_case,
+    Matrix* d_B_case,
+    Matrix* d_A_control,
+    Matrix* d_B_control,
+    Entry*** d_entries,
+    double* zpthres,
+    double* sd_tot) {
 
     printf("Kernel started\n");
 
-    printf("[%d, %d], [%d, %d]\n", d_A_case.width, d_A_case.height, d_B_case.width, d_B_case.height);
-    printf("[%d, %d], [%d, %d]\n", d_A_control.width, d_A_control.height, d_B_control.width, d_B_control.height);
+    //printf("[%d, %d], [%d, %d]\n", d_A_case.width, d_A_case.height, d_B_case.width, d_B_case.height);
+    //printf("[%d, %d], [%d, %d]\n", d_A_control.width, d_A_control.height, d_B_control.width, d_B_control.height);
 
+    /*
     Matrix z_test = subtract_matrices(
         getcor(d_A_case, d_B_case),
         getcor(d_A_control, d_B_control)
@@ -368,8 +368,11 @@ __global__ void ZTestKernel(
             }
         }
     }
+    
 
     delete[] z_test.elements;
+    */
+    printf("Thread completed successfully!\n");
 
     //if(threadIdx.x == 0)
     //    printf("------------------Chunk %d finished--------------------\n", i);
@@ -379,12 +382,9 @@ __global__ void ZTestKernel(
 /**
 * What is run each time a thread is called in our subloop
 */
-__host__ void individual_thread(int i, int j, int chunksize, Matrix& control_mat, Matrix& case_mat, double zpthres, double sd_tot, int SNP) {
+__host__ void individual_thread(int i, int j, int chunksize, Matrix& control_mat, Matrix& case_mat, double zpthres, double sd_tot, int SNP, cudaStream_t& currStream) {
     
     cudaError_t cudaStatus;
-
-    cudaStream_t currStream;
-    cudaStreamCreate(&currStream);
 
     Range i_chunk = ithChunk(i, SNP, chunksize);
     Range j_chunk = ithChunk(j + i, SNP, chunksize);
@@ -435,11 +435,12 @@ __host__ void individual_thread(int i, int j, int chunksize, Matrix& control_mat
     // Load all matrices to device memory
     Matrix d_A_case = { A_chunk_case.width, A_chunk_case.height, new double[A_chunk_case.width * A_chunk_case.height] };
     size_t size = A_chunk_case.width * A_chunk_case.height * sizeof(double); //Calculate the total amount of memory to allocate for matrix A
-    cudaStatus = cudaMalloc(&d_A_case.elements, size); //Allocate the data on the CUDA device
+    cudaStatus = cudaMallocManaged(&d_A_case.elements, size); //Allocate the data on the CUDA device
     if (cudaStatus != cudaSuccess) {
         printf("Error w d_A_case malloc\n");
         return;
     }
+    cudaStreamAttachMemAsync(currStream, d_A_case.elements);
 
     cudaStatus = cudaMemcpyAsync(d_A_case.elements, A_chunk_case.elements, size,
         cudaMemcpyHostToDevice, currStream); //Copy the memory stored in the Matrix struct into the allocated memory
@@ -450,11 +451,12 @@ __host__ void individual_thread(int i, int j, int chunksize, Matrix& control_mat
 
     Matrix d_B_case = { B_chunk_case.width, B_chunk_case.height, new double[B_chunk_case.width * B_chunk_case.height] };
     size = B_chunk_case.width * B_chunk_case.height * sizeof(double); //Calculate the total amount of memory to allocate for matrix A
-    cudaStatus = cudaMalloc(&d_B_case.elements, size); //Allocate the data on the CUDA device
+    cudaStatus = cudaMallocManaged(&d_B_case.elements, size); //Allocate the data on the CUDA device
     if (cudaStatus != cudaSuccess) {
         printf("Error w d_B_case malloc\n");
         return;
     }
+    cudaStreamAttachMemAsync(currStream, d_B_case.elements);
 
     cudaStatus = cudaMemcpyAsync(d_B_case.elements, B_chunk_case.elements, size,
         cudaMemcpyHostToDevice, currStream); //Copy the memory stored in the Matrix struct into the allocated memory
@@ -465,11 +467,12 @@ __host__ void individual_thread(int i, int j, int chunksize, Matrix& control_mat
 
     Matrix d_A_control = { A_chunk_control.width, A_chunk_control.height, new double[A_chunk_control.width * A_chunk_control.height] };
     size = A_chunk_control.width * A_chunk_control.height * sizeof(double); //Calculate the total amount of memory to allocate for matrix A
-    cudaStatus = cudaMalloc(&d_A_control.elements, size); //Allocate the data on the CUDA device
+    cudaStatus = cudaMallocManaged(&d_A_control.elements, size); //Allocate the data on the CUDA device
     if (cudaStatus != cudaSuccess) {
         printf("Error w d_A_control malloc\n");
         return;
     }
+    cudaStreamAttachMemAsync(currStream, d_A_control.elements);
 
     cudaStatus = cudaMemcpyAsync(d_A_control.elements, A_chunk_control.elements, size,
         cudaMemcpyHostToDevice, currStream); //Copy the memory stored in the Matrix struct into the allocated memory
@@ -480,11 +483,12 @@ __host__ void individual_thread(int i, int j, int chunksize, Matrix& control_mat
 
     Matrix d_B_control = { B_chunk_control.width, B_chunk_control.height, new double[B_chunk_control.width * B_chunk_control.height] };
     size = B_chunk_control.width * B_chunk_control.height * sizeof(double); //Calculate the total amount of memory to allocate for matrix A
-    cudaStatus = cudaMalloc(&d_B_control.elements, size); //Allocate the data on the CUDA device
+    cudaStatus = cudaMallocManaged(&d_B_control.elements, size); //Allocate the data on the CUDA device
     if (cudaStatus != cudaSuccess) {
         printf("Error w d_B_control malloc\n");
         return;
     }
+    cudaStreamAttachMemAsync(currStream, d_B_control.elements);
 
     cudaStatus = cudaMemcpyAsync(d_B_control.elements, B_chunk_control.elements, size,
         cudaMemcpyHostToDevice, currStream); //Copy the memory stored in the Matrix struct into the allocated memory
@@ -502,21 +506,24 @@ __host__ void individual_thread(int i, int j, int chunksize, Matrix& control_mat
         printf("Error w d_entries malloc\n");
         return;
     }
+    cudaStreamAttachMemAsync(currStream, d_entries);
 
     cudaStreamSynchronize(currStream);
 
+    printf("KERNEL CALL\n");
+
     ZTestKernel <<<1, 1, 0, currStream>>> (
-        i,
-        i_chunk,
-        j_chunk,
-        chunksize,
-        d_A_case,
-        d_B_case,
-        d_A_control,
-        d_B_control,
-        d_entries,
-        zpthres,
-        sd_tot
+        &i,
+        &i_chunk,
+        &j_chunk,
+        &chunksize,
+        &d_A_case,
+        &d_B_case,
+        &d_A_control,
+        &d_B_control,
+        &d_entries,
+        &zpthres,
+        &sd_tot
     );
 
     cudaMemcpyAsync(entries, d_entries, sizeof(Entry) * CHUNK_SIZE * CHUNK_SIZE,
@@ -529,8 +536,6 @@ __host__ void individual_thread(int i, int j, int chunksize, Matrix& control_mat
     cudaFree(&d_A_control);
     cudaFree(&d_B_control);
     cudaFree(&d_entries);
-
-    cudaStreamDestroy(currStream);
 }
 
 __host__ double qnorm(double p, double mean, double sd, bool lower_tail) {
@@ -741,8 +746,14 @@ __host__ cudaError_t EpiScan(Matrix genotype_data,
         printf("-------------Chunk %d-------------\n");
         Range curr_range = { i, n_splits };
         int thread_dim = (curr_range.max - curr_range.min) + 1; //Get rid of +1 in order to run with fixed way?
+        std::vector<std::thread> t;
+        cudaStream_t* streams = new cudaStream_t[thread_dim];
         for (int j = 0; j < thread_dim; j++) {
-            printf("Thread started!\n");
+            cudaStream_t currStream;
+            cudaStreamCreate(&currStream);
+            streams[j] = currStream;
+        }
+        for (int j = 0; j < thread_dim; j++) {
             std::thread curr(individual_thread, 
                              i, 
                              j, 
@@ -750,10 +761,18 @@ __host__ cudaError_t EpiScan(Matrix genotype_data,
                              std::ref(control_mat), 
                              std::ref(case_mat), 
                              zpthres, 
-                             sd_tot, 
-                             genotype_data.width);
-            curr.join();
+                             sd_tot,
+                             genotype_data.width,
+                             std::ref(streams[j]));
+            t.push_back(move(curr));
         }
+        for (int i = 0; i < t.size(); i++) {
+            t.at(i).join();
+        }
+        for (int j = 0; j < thread_dim; j++) {
+            cudaStreamDestroy(streams[j]);
+        }
+        delete[] streams;
     }
 
     //Start main loop here----------------------------------------------------------------------------------------------------------
