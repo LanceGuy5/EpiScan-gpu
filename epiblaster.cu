@@ -313,17 +313,17 @@ __device__ Matrix getcor(Matrix A, Matrix B)
 
 
 __global__ void ZTestKernel(
-    int* i,
-    Range* i_chunk,
-    Range* j_chunk,
-    int* chunksize,
-    Matrix* d_A_case,
-    Matrix* d_B_case,
-    Matrix* d_A_control,
-    Matrix* d_B_control,
-    Entry*** d_entries,
-    double* zpthres,
-    double* sd_tot) {
+    int i,
+    Range i_chunk,
+    Range j_chunk,
+    int chunksize,
+    Matrix d_A_case,
+    Matrix d_B_case,
+    Matrix d_A_control,
+    Matrix d_B_control,
+    Entry** d_entries,
+    double zpthres,
+    double sd_tot) {
 
     printf("Kernel started\n");
 
@@ -524,16 +524,23 @@ __host__ void individual_thread(int i, int j, int chunksize, Matrix& control_mat
         sd_tot
     );
 
-    cudaMemcpyAsync(entries, d_entries, sizeof(Entry) * CHUNK_SIZE * CHUNK_SIZE,
-        cudaMemcpyDeviceToHost, currStream); //Copy the memory stored in the Matrix struct into the allocated memory
+    printf("Kernel exited\n");
+
+    //cudaMemcpyAsync(entries, d_entries, sizeof(Entry) * CHUNK_SIZE * CHUNK_SIZE,
+    //    cudaMemcpyDeviceToHost, currStream); //Copy the memory stored in the Matrix struct into the allocated memory
 
     cudaStreamSynchronize(currStream);
 
-    cudaFree(&d_A_case);
-    cudaFree(&d_B_case);
-    cudaFree(&d_A_control);
-    cudaFree(&d_B_control);
-    cudaFree(&d_entries);
+    cudaFreeAsync(&d_A_case, currStream);
+    cudaFreeAsync(&d_B_case, currStream);
+    cudaFreeAsync(&d_A_control, currStream);
+    cudaFreeAsync(&d_B_control, currStream);
+    cudaFreeAsync(&d_entries, currStream);
+
+    delete[] A_chunk_case_data;
+    delete[] B_chunk_case_data;
+    delete[] A_chunk_control_data;
+    delete[] B_chunk_control_data;
 }
 
 __host__ double qnorm(double p, double mean, double sd, bool lower_tail) {
@@ -740,17 +747,17 @@ __host__ cudaError_t EpiScan(Matrix genotype_data,
     //Here is where the normal cluster code belongs -> time to divide into a different kernel :(
     //Chunk calculation starts at 1
     printf("Main loop starting...\n");
+    cudaStream_t* streams = new cudaStream_t[n_splits];
+    for (int j = 0; j < n_splits; j++) {
+        cudaStream_t currStream;
+        cudaStreamCreate(&currStream);
+        streams[j] = currStream;
+    }
     for (int i = 1; i <= n_splits; i++) {
-        printf("-------------Chunk %d-------------\n");
+        printf("-------------Chunk %d-------------\n", i);
         Range curr_range = { i, n_splits };
         int thread_dim = (curr_range.max - curr_range.min) + 1; //Get rid of +1 in order to run with fixed way?
         std::vector<std::thread> t;
-        cudaStream_t* streams = new cudaStream_t[thread_dim];
-        for (int j = 0; j < thread_dim; j++) {
-            cudaStream_t currStream;
-            cudaStreamCreate(&currStream);
-            streams[j] = currStream;
-        }
         for (int j = 0; j < thread_dim; j++) {
             std::thread curr(individual_thread, 
                              i, 
@@ -767,11 +774,11 @@ __host__ cudaError_t EpiScan(Matrix genotype_data,
         for (int i = 0; i < t.size(); i++) {
             t.at(i).join();
         }
-        for (int j = 0; j < thread_dim; j++) {
-            cudaStreamDestroy(streams[j]);
-        }
-        delete[] streams;
     }
+    for (int j = 0; j < n_splits; j++) {
+        cudaStreamDestroy(streams[j]);
+    }
+    delete[] streams;
 
     //Start main loop here----------------------------------------------------------------------------------------------------------
 
