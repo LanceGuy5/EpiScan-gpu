@@ -325,7 +325,7 @@ __global__ void ZTestKernel(
     double* zpthres,
     double* sd_tot) {
 
-    printf("Kernel started\n");
+    //printf("Kernel started\n");
 
     //printf("[%d, %d], [%d, %d]\n", d_A_case.width, d_A_case.height, d_B_case.width, d_B_case.height);
     //printf("[%d, %d], [%d, %d]\n", d_A_control.width, d_A_control.height, d_B_control.width, d_B_control.height);
@@ -372,7 +372,7 @@ __global__ void ZTestKernel(
 
     delete[] z_test.elements;
     */
-    printf("Kernel completed successfully!\n");
+    //printf("Kernel completed successfully!\n");
 
     //if(threadIdx.x == 0)
     //    printf("------------------Chunk %d finished--------------------\n", i);
