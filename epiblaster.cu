@@ -313,17 +313,17 @@ __device__ Matrix getcor(Matrix A, Matrix B)
 
 
 __global__ void ZTestKernel(
-    int i,
+    int* i,
     Range i_chunk,
     Range j_chunk,
-    int chunksize,
+    int* chunksize,
     Matrix d_A_case,
     Matrix d_B_case,
     Matrix d_A_control,
     Matrix d_B_control,
     Entry** d_entries,
-    double zpthres,
-    double sd_tot) {
+    double* zpthres,
+    double* sd_tot) {
 
     printf("Kernel started\n");
 
@@ -372,7 +372,7 @@ __global__ void ZTestKernel(
 
     delete[] z_test.elements;
     */
-    printf("Thread completed successfully!\n");
+    printf("Kernel completed successfully!\n");
 
     //if(threadIdx.x == 0)
     //    printf("------------------Chunk %d finished--------------------\n", i);
@@ -384,7 +384,12 @@ __global__ void ZTestKernel(
 */
 __host__ void individual_thread(int i, int j, int chunksize, Matrix& control_mat, Matrix& case_mat, double zpthres, double sd_tot, int SNP, cudaStream_t& currStream) {
     
+    //printf("%lld started\n", std::this_thread::get_id());
+
     cudaError_t cudaStatus;
+
+    int *d_i, *d_chunksize;
+    double *d_zpthres, *d_sd_tot;
 
     Range i_chunk = ithChunk(i, SNP, chunksize);
     Range j_chunk = ithChunk(j + i, SNP, chunksize);
@@ -432,15 +437,68 @@ __host__ void individual_thread(int i, int j, int chunksize, Matrix& control_mat
         }
     }
 
+    cudaStatus = cudaMallocAsync(&d_i, sizeof(int), currStream);
+    if (cudaStatus != cudaSuccess) {
+        printf("Error w d_i malloc\n");
+        return;
+    }
+    //cudaStreamAttachMemAsync(currStream, d_i);
+    
+    cudaStatus = cudaMemcpyAsync(d_i, &i, sizeof(int), cudaMemcpyHostToDevice, currStream);
+    if (cudaStatus != cudaSuccess) {
+        printf("Error w d_i memcpy\n");
+        return;
+    }
+
+    cudaStatus = cudaMallocAsync(&d_chunksize, sizeof(int), currStream);
+    if (cudaStatus != cudaSuccess) {
+        printf("Error w d_chunksize malloc\n");
+        return;
+    }
+    //cudaStreamAttachMemAsync(currStream, d_chunksize);
+
+    cudaStatus = cudaMemcpyAsync(d_chunksize, &chunksize, sizeof(int), cudaMemcpyHostToDevice, currStream);
+    if (cudaStatus != cudaSuccess) {
+        printf("Error w d_chunksize memcpy\n");
+        return;
+    }
+
+    cudaStatus = cudaMallocAsync(&d_zpthres, sizeof(double), currStream);
+    if (cudaStatus != cudaSuccess) {
+        printf("Error w d_zpthres malloc\n");
+        return;
+    }
+    //cudaStreamAttachMemAsync(currStream, d_zpthres);
+
+    cudaStatus = cudaMemcpyAsync(d_zpthres, &zpthres, sizeof(double), cudaMemcpyHostToDevice, currStream);
+    if (cudaStatus != cudaSuccess) {
+        printf("Error w d_zpthres memcpy\n");
+        return;
+    }
+
+    cudaStatus = cudaMallocAsync(&d_sd_tot, sizeof(double), currStream);
+    if (cudaStatus != cudaSuccess) {
+        printf("Error w d_sd_tot malloc\n");
+        return;
+    }
+    //cudaStreamAttachMemAsync(currStream, d_sd_tot);
+
+    cudaStatus = cudaMemcpyAsync(d_sd_tot, &sd_tot, sizeof(double), cudaMemcpyHostToDevice, currStream);
+    if (cudaStatus != cudaSuccess) {
+        printf("Error w d_sd_tot memcpy\n");
+        return;
+    }
+    //------------------------------------
+
     // Load all matrices to device memory
     Matrix d_A_case = { A_chunk_case.width, A_chunk_case.height, new double[A_chunk_case.width * A_chunk_case.height] };
     size_t size = A_chunk_case.width * A_chunk_case.height * sizeof(double); //Calculate the total amount of memory to allocate for matrix A
-    cudaStatus = cudaMallocManaged(&d_A_case.elements, size); //Allocate the data on the CUDA device
+    cudaStatus = cudaMallocAsync(&d_A_case.elements, size, currStream); //Allocate the data on the CUDA device
     if (cudaStatus != cudaSuccess) {
         printf("Error w d_A_case malloc\n");
         return;
     }
-    cudaStreamAttachMemAsync(currStream, d_A_case.elements);
+    //cudaStreamAttachMemAsync(currStream, d_A_case.elements);
 
     cudaStatus = cudaMemcpyAsync(d_A_case.elements, A_chunk_case.elements, size,
         cudaMemcpyHostToDevice, currStream); //Copy the memory stored in the Matrix struct into the allocated memory
@@ -451,12 +509,12 @@ __host__ void individual_thread(int i, int j, int chunksize, Matrix& control_mat
 
     Matrix d_B_case = { B_chunk_case.width, B_chunk_case.height, new double[B_chunk_case.width * B_chunk_case.height] };
     size = B_chunk_case.width * B_chunk_case.height * sizeof(double); //Calculate the total amount of memory to allocate for matrix A
-    cudaStatus = cudaMallocManaged(&d_B_case.elements, size); //Allocate the data on the CUDA device
+    cudaStatus = cudaMallocAsync(&d_B_case.elements, size, currStream); //Allocate the data on the CUDA device
     if (cudaStatus != cudaSuccess) {
         printf("Error w d_B_case malloc\n");
         return;
     }
-    cudaStreamAttachMemAsync(currStream, d_B_case.elements);
+    //cudaStreamAttachMemAsync(currStream, d_B_case.elements);
 
     cudaStatus = cudaMemcpyAsync(d_B_case.elements, B_chunk_case.elements, size,
         cudaMemcpyHostToDevice, currStream); //Copy the memory stored in the Matrix struct into the allocated memory
@@ -467,12 +525,12 @@ __host__ void individual_thread(int i, int j, int chunksize, Matrix& control_mat
 
     Matrix d_A_control = { A_chunk_control.width, A_chunk_control.height, new double[A_chunk_control.width * A_chunk_control.height] };
     size = A_chunk_control.width * A_chunk_control.height * sizeof(double); //Calculate the total amount of memory to allocate for matrix A
-    cudaStatus = cudaMallocManaged(&d_A_control.elements, size); //Allocate the data on the CUDA device
+    cudaStatus = cudaMallocAsync(&d_A_control.elements, size, currStream); //Allocate the data on the CUDA device
     if (cudaStatus != cudaSuccess) {
         printf("Error w d_A_control malloc\n");
         return;
     }
-    cudaStreamAttachMemAsync(currStream, d_A_control.elements);
+    //cudaStreamAttachMemAsync(currStream, d_A_control.elements);
 
     cudaStatus = cudaMemcpyAsync(d_A_control.elements, A_chunk_control.elements, size,
         cudaMemcpyHostToDevice, currStream); //Copy the memory stored in the Matrix struct into the allocated memory
@@ -483,12 +541,12 @@ __host__ void individual_thread(int i, int j, int chunksize, Matrix& control_mat
 
     Matrix d_B_control = { B_chunk_control.width, B_chunk_control.height, new double[B_chunk_control.width * B_chunk_control.height] };
     size = B_chunk_control.width * B_chunk_control.height * sizeof(double); //Calculate the total amount of memory to allocate for matrix A
-    cudaStatus = cudaMallocManaged(&d_B_control.elements, size); //Allocate the data on the CUDA device
+    cudaStatus = cudaMallocAsync(&d_B_control.elements, size, currStream); //Allocate the data on the CUDA device
     if (cudaStatus != cudaSuccess) {
         printf("Error w d_B_control malloc\n");
         return;
     }
-    cudaStreamAttachMemAsync(currStream, d_B_control.elements);
+    //cudaStreamAttachMemAsync(currStream, d_B_control.elements);
 
     cudaStatus = cudaMemcpyAsync(d_B_control.elements, B_chunk_control.elements, size,
         cudaMemcpyHostToDevice, currStream); //Copy the memory stored in the Matrix struct into the allocated memory
@@ -498,49 +556,54 @@ __host__ void individual_thread(int i, int j, int chunksize, Matrix& control_mat
     }
 
     //Allocate some memory for returning Entries
-    Entry* entries[CHUNK_SIZE * CHUNK_SIZE];
+    Entry* entries = new Entry[CHUNK_SIZE * CHUNK_SIZE];
 
     Entry** d_entries;
-    cudaStatus = cudaMalloc(&d_entries, sizeof(Entry) * CHUNK_SIZE * CHUNK_SIZE); //Allocate the data on the CUDA device
+    cudaStatus = cudaMallocAsync(&d_entries, sizeof(Entry) * CHUNK_SIZE * CHUNK_SIZE, currStream); //Allocate the data on the CUDA device
     if (cudaStatus != cudaSuccess) {
         printf("Error w d_entries malloc\n");
         return;
     }
-    cudaStreamAttachMemAsync(currStream, d_entries);
-
-    cudaStreamSynchronize(currStream);
+    //cudaStreamAttachMemAsync(currStream, d_entries);
 
     ZTestKernel <<<1, 1, 0, currStream>>> (
-        i,
+        d_i,
         i_chunk,
         j_chunk,
-        chunksize,
+        d_chunksize,
         d_A_case,
         d_B_case,
         d_A_control,
         d_B_control,
         d_entries,
-        zpthres,
-        sd_tot
+        d_zpthres,
+        d_sd_tot
     );
 
-    printf("Kernel exited\n");
+    //printf("Kernel exited\n");
 
     //cudaMemcpyAsync(entries, d_entries, sizeof(Entry) * CHUNK_SIZE * CHUNK_SIZE,
     //    cudaMemcpyDeviceToHost, currStream); //Copy the memory stored in the Matrix struct into the allocated memory
 
     cudaStreamSynchronize(currStream);
 
-    cudaFreeAsync(&d_A_case, currStream);
-    cudaFreeAsync(&d_B_case, currStream);
-    cudaFreeAsync(&d_A_control, currStream);
-    cudaFreeAsync(&d_B_control, currStream);
-    cudaFreeAsync(&d_entries, currStream);
-
+    cudaFree(d_A_case.elements);
+    cudaFree(d_B_case.elements);
+    cudaFree(d_A_control.elements);
+    cudaFree(d_B_control.elements);
+    cudaFree(d_entries);
+    cudaFree(d_i);
+    cudaFree(d_chunksize);
+    cudaFree(d_zpthres);
+    cudaFree(d_sd_tot);
+    
     delete[] A_chunk_case_data;
     delete[] B_chunk_case_data;
     delete[] A_chunk_control_data;
     delete[] B_chunk_control_data;
+    delete[] entries;
+
+    //printf("%lld finished\n", std::this_thread::get_id());
 }
 
 __host__ double qnorm(double p, double mean, double sd, bool lower_tail) {
@@ -747,12 +810,14 @@ __host__ cudaError_t EpiScan(Matrix genotype_data,
     //Here is where the normal cluster code belongs -> time to divide into a different kernel :(
     //Chunk calculation starts at 1
     printf("Main loop starting...\n");
+    printf("Thread limit(?): %u\n", std::thread::hardware_concurrency());
     cudaStream_t* streams = new cudaStream_t[n_splits];
     for (int j = 0; j < n_splits; j++) {
         cudaStream_t currStream;
         cudaStreamCreate(&currStream);
         streams[j] = currStream;
     }
+    size_t free, total; //for data checking
     for (int i = 1; i <= n_splits; i++) {
         printf("-------------Chunk %d-------------\n", i);
         Range curr_range = { i, n_splits };
@@ -771,16 +836,17 @@ __host__ cudaError_t EpiScan(Matrix genotype_data,
                              std::ref(streams[j]));
             t.push_back(move(curr));
         }
-        for (int i = 0; i < t.size(); i++) {
-            t.at(i).join();
+        for (auto &thr : t) {
+            thr.join();
         }
+        cudaMemGetInfo(&freeMemory, &totalMemory);
+        printf("Total GPU Memory: %zu bytes\n", totalMemory);
+        printf("Free GPU Memory: %zu bytes\n", freeMemory);
     }
     for (int j = 0; j < n_splits; j++) {
         cudaStreamDestroy(streams[j]);
     }
     delete[] streams;
-
-    //Start main loop here----------------------------------------------------------------------------------------------------------
 
     cudaDeviceSynchronize();
 

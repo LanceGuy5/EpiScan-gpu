@@ -75,17 +75,17 @@ typedef struct Entry {
 } Entry;
 
 __global__ void ZTestKernel(
-    int i,
+    int* i,
     Range i_chunk,
     Range j_chunk,
-    int chunksize,
+    int* chunksize,
     Matrix d_A_case,
     Matrix d_B_case,
     Matrix d_A_control,
     Matrix d_B_control,
     Entry** d_entries,
-    double zpthres,
-    double sd_tot);
+    double* zpthres,
+    double* sd_tot);
 
 __device__ Matrix subtract_matrices(Matrix first, Matrix other);
 __device__ Matrix transpose(Matrix A);
