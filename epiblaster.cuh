@@ -14,13 +14,14 @@
 #define DATA_HEIGHT 713
 #endif
 #ifndef TEST_PATH
-#define TEST_PATH "C:\\Users\\lance\\Desktop\\data\\data\\ASD_imp_maf20perc.csv"
+//#define TEST_PATH "C:\\Users\\lance\\Desktop\\data\\data\\ASD_imp_maf20perc.csv"
+#define TEST_PATH "C:\\Users\\lance\\Desktop\\data\\data\\ALVM_imp_maf20perc_w_Target.csv"
 #endif
 #ifndef TEMP_FILE
 #define TEMP_FILE "C:\\Users\\lance\\Desktop\\data\\results\\results_temp.txt"
 #endif
 #ifndef OUTPUT_FILE
-#define OUTPUT_FILE "C:\\Users\\lance\\Desktop\\data\\results\\asd_results_gpu.txt"
+#define OUTPUT_FILE "C:\\Users\\lance\\Desktop\\data\\results\\alvm_results_gpu.txt"
 #endif
 #ifndef ZPTHRES
 #define ZPTHRES 0.05//3//1e-6 - If the threshold is low enough, it can't write to the file fast enough
@@ -83,7 +84,7 @@ __global__ void ZTestKernel(
     Matrix d_B_case,
     Matrix d_A_control,
     Matrix d_B_control,
-    Entry** d_entries,
+    Entry* d_entries,
     double* zpthres,
     double* sd_tot);
 

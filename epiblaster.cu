@@ -145,6 +145,8 @@ __device__ Matrix subtract_matrices(Matrix first, Matrix other) {
                 ret.elements[i * ret.width + j] -= other.elements[i * other.width + j];
             }
         }
+        //delete[] first.elements;
+        //delete[] other.elements;
         return ret;
     }
 }
@@ -194,7 +196,6 @@ __device__ Matrix cross_product(Matrix A, Matrix B)
     }
 
     Matrix C{ a_transposed.height, B.width, C_elements };
-    printf("Matrix made\n");
 
     //First for loop -> per a_transposed row
     for (int k = 0; k < a_transposed.height; k++) {
@@ -212,10 +213,9 @@ __device__ Matrix cross_product(Matrix A, Matrix B)
         }
     }
 
-    printf("Write complete. . .\n");
     delete[] a_transposed.elements;
+    delete[] B.elements;
 
-    printf("Finished cross prod-----------------\n");
     return C;
 }
 
@@ -278,6 +278,7 @@ __device__ Matrix getcor(Matrix A, Matrix B)
     //Matrix Abar = scale(A);
     double A_mean, A_stdev, B_mean, B_stdev;
 
+    #pragma unroll
     for (int i = 0; i < A.width; i++) {
         A_mean = A.mean(i);
         A_stdev = A.standard_dev(A_mean, i);
@@ -285,7 +286,7 @@ __device__ Matrix getcor(Matrix A, Matrix B)
             A.elements[j * A.width + i] = (*(A.elements + j * A.width + i) - A_mean) / A_stdev;
         }
     }
-    //TODO issue with code below:
+    #pragma unroll
     for (int i = 0; i < A.height; i++) {
         for (int j = 0; j < A.width; j++) {
             A.elements[i * A.width + j] = A.elements[i * A.width + j]
@@ -293,7 +294,7 @@ __device__ Matrix getcor(Matrix A, Matrix B)
         }
     }
 
-    //Matrix Bbar = scale(B);
+    #pragma unroll
     for (int i = 0; i < B.width; i++) {
         B_mean = B.mean(i);
         B_stdev = B.standard_dev(B_mean, i);
@@ -301,6 +302,7 @@ __device__ Matrix getcor(Matrix A, Matrix B)
             B.elements[j * B.width + i] = (*(B.elements + j * B.width + i) - B_mean) / B_stdev;
         }
     }
+    #pragma unroll
     for (int i = 0; i < B.height; i++) {
         for (int j = 0; j < B.width; j++) {
             B.elements[i * B.width + j] = *(B.elements + i * B.width + j)
@@ -321,7 +323,7 @@ __global__ void ZTestKernel(
     Matrix d_B_case,
     Matrix d_A_control,
     Matrix d_B_control,
-    Entry** d_entries,
+    Entry* d_entries,
     double* zpthres,
     double* sd_tot) {
 
@@ -330,48 +332,50 @@ __global__ void ZTestKernel(
     //printf("[%d, %d], [%d, %d]\n", d_A_case.width, d_A_case.height, d_B_case.width, d_B_case.height);
     //printf("[%d, %d], [%d, %d]\n", d_A_control.width, d_A_control.height, d_B_control.width, d_B_control.height);
 
-    /*
     Matrix z_test = subtract_matrices(
         getcor(d_A_case, d_B_case),
         getcor(d_A_control, d_B_control)
     );
 
-    printf("first section finished\n");
+    //printf("first section finished\n");
 
-    printf("%d, %d\n", z_test.height, z_test.width);
-    printf("%f\n", sd_tot);
+    //printf("%d, %d\n", z_test.height, z_test.width);
+    //printf("%f\n", sd_tot);
 
+    #pragma unroll
     for (int k = 0; k < z_test.height; k++) {
         for (int l = 0; l < z_test.width; l++) {
-            z_test.elements[k * z_test.width + l] /= sd_tot;
+            z_test.elements[k * z_test.width + l] /= *sd_tot;
         }
     }
 
-    printf("%d: z_test actually finished\n", threadIdx.x);
+    //printf("%d: z_test actually finished\n", threadIdx.x);
 
     int entrySuccess = 0;
 
     //Actual search for interaction here
+    #pragma unroll
     for (int k = 0; k < z_test.height; k++) {
         for (int l = 0; l < z_test.width; l++) {
             double d = *(z_test.elements + k * z_test.width + l);
-            if (abs(d) >= zpthres) {
+            if (abs(d) >= *zpthres) {
                 entrySuccess += 1;
-                Entry temp
+                d_entries[k * z_test.height + l] = Entry
                 {
                     k + i_chunk.min,
                     l + j_chunk.min,
                     d,
                     ztoP(d)
                 };
-                temp.print_entry();
+                //d_entries[k * z_test.height + l]->print_entry();
+            }
+            else {
+                d_entries[k * z_test.height + l] = Entry{};
             }
         }
     }
-    
 
     delete[] z_test.elements;
-    */
     //printf("Kernel completed successfully!\n");
 
     //if(threadIdx.x == 0)
@@ -558,8 +562,8 @@ __host__ void individual_thread(int i, int j, int chunksize, Matrix& control_mat
     //Allocate some memory for returning Entries
     Entry* entries = new Entry[CHUNK_SIZE * CHUNK_SIZE];
 
-    Entry** d_entries;
-    cudaStatus = cudaMallocAsync(&d_entries, sizeof(Entry) * CHUNK_SIZE * CHUNK_SIZE, currStream); //Allocate the data on the CUDA device
+    Entry* d_entries;
+    cudaStatus = cudaMallocAsync((void**)&d_entries, sizeof(Entry) * CHUNK_SIZE * CHUNK_SIZE, currStream); //Allocate the data on the CUDA device
     if (cudaStatus != cudaSuccess) {
         printf("Error w d_entries malloc\n");
         return;
@@ -582,20 +586,30 @@ __host__ void individual_thread(int i, int j, int chunksize, Matrix& control_mat
 
     //printf("Kernel exited\n");
 
-    //cudaMemcpyAsync(entries, d_entries, sizeof(Entry) * CHUNK_SIZE * CHUNK_SIZE,
-    //    cudaMemcpyDeviceToHost, currStream); //Copy the memory stored in the Matrix struct into the allocated memory
+    cudaMemcpyAsync(entries, d_entries, sizeof(Entry) * CHUNK_SIZE * CHUNK_SIZE,
+        cudaMemcpyDeviceToHost, currStream); //Copy the memory stored in the Matrix struct into the allocated memory
 
-    cudaStreamSynchronize(currStream);
+    //cudaStreamSynchronize(currStream);
 
-    cudaFree(d_A_case.elements);
-    cudaFree(d_B_case.elements);
-    cudaFree(d_A_control.elements);
-    cudaFree(d_B_control.elements);
-    cudaFree(d_entries);
-    cudaFree(d_i);
-    cudaFree(d_chunksize);
-    cudaFree(d_zpthres);
-    cudaFree(d_sd_tot);
+    //TODO WRITE ENTRIES TO FILE
+    for (int i = 0; i < CHUNK_SIZE; i++) {
+        for (int j = 0; j < CHUNK_SIZE; j++) {
+            Entry curr = entries[i * CHUNK_SIZE + j];
+            if (curr.z_P > 0.00001) { //Assumes this is not an empty Entry
+                //curr.host_print_entry();
+            }
+        }
+    }
+
+    cudaFreeAsync(d_A_case.elements, currStream);
+    cudaFreeAsync(d_B_case.elements, currStream);
+    cudaFreeAsync(d_A_control.elements, currStream);
+    cudaFreeAsync(d_B_control.elements, currStream);
+    cudaFreeAsync(d_entries, currStream);
+    cudaFreeAsync(d_i, currStream);
+    cudaFreeAsync(d_chunksize, currStream);
+    cudaFreeAsync(d_zpthres, currStream);
+    cudaFreeAsync(d_sd_tot, currStream);
     
     delete[] A_chunk_case_data;
     delete[] B_chunk_case_data;
@@ -836,8 +850,9 @@ __host__ cudaError_t EpiScan(Matrix genotype_data,
                              std::ref(streams[j]));
             t.push_back(move(curr));
         }
-        for (auto &thr : t) {
-            thr.join();
+        for (int j = 0; j < thread_dim; j++) {
+            t.at(j).join();
+            cudaStreamSynchronize(streams[j]);
         }
         cudaMemGetInfo(&freeMemory, &totalMemory);
         printf("Total GPU Memory: %zu bytes\n", totalMemory);
