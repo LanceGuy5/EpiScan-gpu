@@ -639,7 +639,8 @@ __host__ double qnorm(double p, double mean, double sd, bool lower_tail) {
     return (double)(mean + z * sd);
 }
 
-__host__ cudaError_t EpiScan(Matrix genotype_data,
+__host__ cudaError_t EpiScan(
+    Matrix genotype_data,
     Matrix phenotype_data,
     double zthres,
     const int chunksize) {
