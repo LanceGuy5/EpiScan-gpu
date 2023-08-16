@@ -24,7 +24,7 @@
 #define OUTPUT_FILE "C:\\Users\\lance\\Desktop\\data\\results\\alvm_results_gpu.txt"
 #endif
 #ifndef ZPTHRES
-#define ZPTHRES 0.05//3//1e-6 - If the threshold is low enough, it can't write to the file fast enough
+#define ZPTHRES 0.01//3//1e-6 - If the threshold is low enough, it can't write to the file fast enough
 #endif
 #ifndef MAX_LABEL_SIZE
 #define MAX_LABEL_SIZE 25
@@ -79,14 +79,11 @@ __global__ void ZTestKernel(
     int* i,
     Range i_chunk,
     Range j_chunk,
-    int* chunksize,
     Matrix d_A_case,
     Matrix d_B_case,
     Matrix d_A_control,
     Matrix d_B_control,
-    Entry* d_entries,
-    double* zpthres,
-    double* sd_tot);
+    Entry** d_entries);
 
 __device__ Matrix subtract_matrices(Matrix first, Matrix other);
 __device__ Matrix transpose(Matrix A);
@@ -100,10 +97,7 @@ __host__ Range ithChunk(int idx, int n, int chunk);
 __host__ void individual_thread(
     int i, 
     int j, 
-    int chunksize, 
     Matrix& control_mat, 
-    Matrix& case_mat, 
-    double zpthres, 
-    double sd_tot, 
-    int n_SNP, 
+    Matrix& case_mat,
+    int SNP, 
     cudaStream_t& currStream);
