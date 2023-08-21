@@ -176,8 +176,11 @@ __device__ Matrix cross_product(Matrix A, Matrix B)
     //double* C_elements = new double[a_transposed.height * B.width];
     double* C_elements = new double[a_transposed.height * B.width];
 
-    if (C_elements == nullptr) printf("%d c_elements never made\n", threadIdx.x);
-
+    if (C_elements == nullptr) {
+        printf("%d c_elements never made\n", threadIdx.x);
+        C_elements = new double[a_transposed.height * B.width];
+        __syncthreads();
+    }
     Matrix C { a_transposed.height, B.width, C_elements };
 
     //First for loop -> per a_transposed row
@@ -319,8 +322,10 @@ __global__ void ZTestKernel(int i,
     double* zpthres,
     double sd_tot) {
 
-    //if(threadIdx.x == 0)
+    //if (threadIdx.x == 0) {
     //    printf("------------------Chunk %d started--------------------\n", i);
+    //    printf("%d, %d\n", control_mat.width * control_mat.height, case_mat.width, case_mat.height);
+    //}
 
     //Find matrix ranges for analysis based on chunks
     //i = i, j = threadIdx.x
@@ -371,11 +376,12 @@ __global__ void ZTestKernel(int i,
         }
     }
 
+    __syncthreads();
+
     //if (threadIdx.x == 0) {
     //    printf("%d bytes allocated in heap memory for this chunk\n", sizeof(double) * A_chunk_case.width * A_chunk_case.height * 4 * 167);
     //}
 
-    __syncthreads();
     //Need to fix some part of this method
     Matrix z_test = subtract_matrices(
         getcor(A_chunk_case, B_chunk_case), 
@@ -415,7 +421,7 @@ __global__ void ZTestKernel(int i,
     //Actual search for interaction here
     for (int k = 0; k < z_test.height; k++) {
         for (int j = 0; j < z_test.width; j++) {
-            double d = *(z_test.elements + i * z_test.width + j);
+            double d = *(z_test.elements + k * z_test.width + j);
             if (abs(d) >= *zpthres) {
                 entrySuccess += 1;
                 Entry temp
@@ -657,6 +663,10 @@ __host__ cudaError_t EpiScan(Matrix genotype_data,
         }
     }
 
+    //Remove phenotype and genotype data
+    delete[] phenotype_data.elements;
+    delete[] genotype_data.elements;
+
     // Load case to device memory
     Matrix d_case = {case_mat.width, case_mat.height, new double[case_mat.width * case_mat.height]};
     size_t size = case_mat.width * case_mat.height * sizeof(double); //Calculate the total amount of memory to allocate for matrix A
@@ -788,6 +798,10 @@ __host__ cudaError_t EpiScan(Matrix genotype_data,
         goto Error;
     }
 
+    delete[] case_mat.elements;
+    delete[] control_mat.elements;
+
+    cudaFree(d_case.elements);
     cudaFree(&d_case);
     cudaFree(&d_control);
     cudaFree(d_zpthres);
@@ -811,6 +825,10 @@ __host__ cudaError_t EpiScan(Matrix genotype_data,
     printf("Output stream fixed - back to here.\n");
 
 Error:
+    delete[] case_mat.elements;
+    delete[] control_mat.elements;
+
+    cudaFree(d_case.elements);
     cudaFree(&d_case);
     cudaFree(&d_control);
     cudaFree(d_zpthres);

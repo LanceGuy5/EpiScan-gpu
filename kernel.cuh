@@ -14,16 +14,16 @@
     #define DATA_HEIGHT 713
 #endif
 #ifndef TEST_PATH
-    #define TEST_PATH "C:\\Users\\lance\\Desktop\\data\\data\\ALVM_imp_maf20perc_w_Target.csv"
+    #define TEST_PATH "C:\\Users\\lance\\Desktop\\data\\data\\ASD_imp_maf20perc.csv"
 #endif
 #ifndef TEMP_FILE
-    #define TEMP_FILE "C:\\Users\\lance\\Desktop\\data\\results\\alvm_results_temp.txt"
+    #define TEMP_FILE "C:\\Users\\lance\\Desktop\\data\\results\\results_temp.txt"
 #endif
 #ifndef OUTPUT_FILE
-    #define OUTPUT_FILE "C:\\Users\\lance\\Desktop\\data\\results\\alvm_results_gpu.txt"
+    #define OUTPUT_FILE "C:\\Users\\lance\\Desktop\\data\\results\\asd_results_gpu.txt"
 #endif
 #ifndef ZPTHRES
-    #define ZPTHRES 0.01//3//1e-6 - If the threshold is low enough, it can't write to the file fast enough
+    #define ZPTHRES 0.05//3//1e-6 - If the threshold is low enough, it can't write to the file fast enough
 #endif
 #ifndef MAX_LABEL_SIZE
     #define MAX_LABEL_SIZE 25
